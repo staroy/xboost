@@ -1,0 +1,1 @@
+QTZYRE_LIBRARY = yes
