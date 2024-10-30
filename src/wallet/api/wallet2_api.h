@@ -1107,6 +1107,12 @@ struct Wallet
     virtual bool verifySignedMessage(const std::string &message, const std::string &addres, const std::string &signature) const = 0;
 
     /*!
+     * \brief generateMineSignedKey
+     * \return key and signature
+     */
+    virtual std::pair<std::string,std::string> generateMineSignedKey() const = 0;
+
+    /*!
      * \brief signMultisigParticipant   signs given message with the multisig public signer key
      * \param message                   message to sign
      * \return                          signature in case of success. Sets status to Error and return empty string in case of error
@@ -1435,7 +1441,14 @@ struct WalletManager
     virtual bool isMining() = 0;
 
     //! starts mining with the set number of threads
-    virtual bool startMining(const std::string &address, uint32_t threads = 1, bool background_mining = false, bool ignore_battery = true) = 0;
+    virtual bool startMining(const std::string &address,
+      const std::vector<std::string>& txids,
+      const std::vector<std::string>& proofs,
+      const std::string &mine_key,
+      const std::string &mine_sig,
+      uint32_t threads = 1,
+      bool background_mining = false,
+      bool ignore_battery = false) = 0;
 
     //! stops mining
     virtual bool stopMining() = 0;

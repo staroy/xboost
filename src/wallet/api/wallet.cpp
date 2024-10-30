@@ -2199,6 +2199,23 @@ bool WalletImpl::checkReserveProof(const std::string &address, const std::string
     }
 }
 
+std::pair<std::string,std::string> WalletImpl::generateMineSignedKey() const
+{
+  cryptonote::keypair key = cryptonote::keypair::generate(hw::get_device("default"));
+  crypto::secret_key mine_key = key.sec;
+  
+  crypto::hash hash;
+  crypto::cn_fast_hash(key.pub.data, sizeof(crypto::public_key), hash);
+  
+  crypto::signature mine_sig;
+  {
+    const cryptonote::account_keys &keys = m_wallet->get_account().get_keys();
+    crypto::generate_signature(hash, keys.m_account_address.m_spend_public_key, keys.m_spend_secret_key, mine_sig);
+  }
+
+  return {epee::string_tools::pod_to_hex(mine_key), epee::string_tools::pod_to_hex(mine_sig)};
+}
+
 std::string WalletImpl::signMessage(const std::string &message, const std::string &address)
 {
     if (address.empty()) {

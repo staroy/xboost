@@ -2082,11 +2082,21 @@ namespace wallet_rpc
   {
     struct request_t
     {
+      std::string miner_address;
+      std::vector<std::string> txids;
+      std::vector<std::string> proofs;
+      std::string mine_key;
+      std::string mine_sig;
       uint64_t    threads_count;
       bool        do_background_mining;
       bool        ignore_battery;
 
       BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(miner_address)
+        KV_SERIALIZE(txids)
+        KV_SERIALIZE(proofs)
+        KV_SERIALIZE(mine_key)
+        KV_SERIALIZE(mine_sig)
         KV_SERIALIZE(threads_count)
         KV_SERIALIZE(do_background_mining)        
         KV_SERIALIZE(ignore_battery)        
