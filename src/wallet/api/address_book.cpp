@@ -100,9 +100,9 @@ bool AddressBookImpl::setDescription(std::size_t index, const std::string &descr
     return r;
 }
 
-bool AddressBookImpl::isChannel(std::size_t index)
+bool AddressBookImpl::isMultiUser(std::size_t index)
 {
-    return m_wallet->m_wallet->is_address_book_row_channel(index);
+    return m_wallet->m_wallet->is_address_book_row_multi_user(index);
 }
 
 void AddressBookImpl::refresh() 

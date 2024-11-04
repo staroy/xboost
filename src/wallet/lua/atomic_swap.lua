@@ -154,6 +154,7 @@ function atomic_swap:send_HX_to_acceptor(pars)
     tools.wallet:do_message_chat_send(
       root.AReceiver.from_addr,
       data,
+      false, -- enable_comments
       MSG_TX_AMOUNT, -- amount
       false, -- unprunable
       ATOMIC_SWAP_MSG_TX_EXTRA_TYPE,
@@ -248,7 +249,7 @@ function atomic_swap:send_Ax_to_creator(pars)
   self:creator_transfer_locked_coin_to_shared()
 end
 
-function atomic_swap:on_message_chat_received(height, txid, mtype, freq, chat, n, sender, data, timestamp)
+function atomic_swap:on_message_chat_received(height, txid, mtype, freq, chat, n, sender, data, enable_comments, timestamp, parent)
   if mtype == ATOMIC_SWAP_MSG_TX_EXTRA_TYPE and freq == MSG_TX_EXTRA_FREQ_0 then
     if not self._chat:is_txid_exist(txid) then
       local info = JSON:decode(data)
@@ -484,6 +485,7 @@ function atomic_swap:init(_zyre)
       tools.wallet:do_message_chat_send(
         info.address,
         data,
+        false, -- enable_comments
         MSG_TX_AMOUNT, -- amount
         false, -- unprunable
         ATOMIC_SWAP_MSG_TX_EXTRA_TYPE,

@@ -24,6 +24,7 @@ namespace tools
       uint64_t height; // message height
       uint64_t timestamp; // message timestamp
       std::string data; // text and other
+      bool enable_comments;
 
       BEGIN_SERIALIZE_OBJECT()
         VERSION_FIELD(0)
@@ -32,6 +33,7 @@ namespace tools
         FIELD(height)
         FIELD(timestamp)
         FIELD(data)
+        FIELD(enable_comments)
       END_SERIALIZE()
     };
 
@@ -42,7 +44,7 @@ namespace tools
       return true if success,
       rvalue n assign order position in chat
     */
-    bool add(const crypto::hash &txid, const message_data& data, uint64_t& n);
+    bool add(const crypto::hash &txid, const message_data& data, uint64_t& n, const crypto::hash &parent = crypto::null_hash);
 
     /*
       set changed message to database,
@@ -191,14 +193,28 @@ namespace tools
     }
 
     /*
+      get parent chat of chat
+      return true if success,
+      pass chat hash
+      assign rvalue parent
+    */
+    bool get_parent(const crypto::hash &chat, crypto::hash &parent);
+
+    /*
       make hash with internal salt from address
     */
     crypto::hash to_hash(const cryptonote::account_public_address &chat);
+
+    /*
+      chat hash with internal salt
+    */
+    crypto::hash to_hash(const crypto::hash &chat);
 
   private:
     lldb::DB                                                       m_db,
                                                                    m_data,
                                                                    m_idx,
+                                                                   m_parent,
                                                                    m_last_reading,
                                                                    m_last_timestamp;
 
@@ -206,6 +222,7 @@ namespace tools
 
     std::unordered_map<crypto::hash, message_data>                 m_cache_data;
     std::unordered_map<crypto::hash, std::vector<crypto::hash>>    m_cache_idx;
+    std::unordered_map<crypto::hash, crypto::hash>                 m_cache_parent;
 
     std::vector<crypto::hash>                                      m_cache_order;
     uint64_t                                                       m_cache_limit;

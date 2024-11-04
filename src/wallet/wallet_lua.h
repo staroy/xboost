@@ -55,7 +55,7 @@ namespace tools {
     
       void clear();
 
-      void on_message_chat_received(uint64_t height, const crypto::hash& txid, uint64_t type, uint64_t freq, const cryptonote::account_public_address& chat,  uint64_t n, const cryptonote::account_public_address& sender, const std::string& text, uint64_t timestamp);
+      void on_message_chat_received(uint64_t height, const crypto::hash& txid, uint64_t type, uint64_t freq, const cryptonote::account_public_address& chat, uint64_t n, const cryptonote::account_public_address& sender, const std::string& text, bool enable_comments, uint64_t timestamp, const crypto::hash& parent);
       void on_message_chat_removed(const crypto::hash& txid);
       void on_atomic_swap_x_received(const crypto::hash& txid, const std::string& x);
     

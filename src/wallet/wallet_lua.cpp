@@ -124,9 +124,9 @@ namespace tools {
       bool add_address_book_row(const tools::wallet2::address_book_row& row);
       bool set_address_book_row(int row_id, const tools::wallet2::address_book_row& row);
       sol::variadic_results get_address_book_row_id(const cryptonote::account_public_address &address, sol::this_state L);
-      bool is_address_book_row_channel(int row_id);
-      bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, const U64& amount, bool unprunable, int type, int freq);
-      sol::variadic_results add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, const U64& amount, bool unprunable, sol::this_state L);
+      bool is_address_book_row_multi_user(int row_id);
+      bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, bool enable_comments, const U64& amount, bool unprunable, int type, int freq);
+      sol::variadic_results add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, bool enable_comments, const U64& amount, bool unprunable, sol::this_state L);
       sol::variadic_results get_message_from_chat(const cryptonote::account_public_address& chat, const U64& n, sol::this_state L);
       uint64_t get_message_chat_size(const cryptonote::account_public_address& chat);
       uint64_t get_message_chat_unread(const cryptonote::account_public_address& chat);
@@ -327,21 +327,21 @@ namespace tools {
        rc.push_back({ L, sol::in_place_type<int>, int(row_id) });
        return rc;
     }
-    bool wallet2_interface::is_address_book_row_channel(int row_id)
+    bool wallet2_interface::is_address_book_row_multi_user(int row_id)
     {
       std::lock_guard<std::mutex> lock(wallet_mx_);
-      return wallet_->is_address_book_row_channel(size_t(row_id));
+      return wallet_->is_address_book_row_multi_user(size_t(row_id));
     }
-    bool wallet2_interface::do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, const U64& amount, bool unprunable, int type, int freq)
+    bool wallet2_interface::do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, bool enable_comments, const U64& amount, bool unprunable, int type, int freq)
     {
        std::lock_guard<std::mutex> lock(wallet_mx_);
-       return wallet_->do_message_chat_send(addr, data, amount.v, unprunable, type, freq);
+       return wallet_->do_message_chat_send(addr, data, enable_comments, amount.v, unprunable, type, freq);
     }
-    sol::variadic_results wallet2_interface::add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, const U64& amount, bool unprunable, sol::this_state L)
+    sol::variadic_results wallet2_interface::add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, bool enable_comments, const U64& amount, bool unprunable, sol::this_state L)
     {
        std::lock_guard<std::mutex> lock(wallet_mx_);
        uint64_t n;
-       bool ok = wallet_->add_message_to_chat(chat, text, amount.v, unprunable, n);
+       bool ok = wallet_->add_message_to_chat(chat, text, enable_comments, amount.v, unprunable, n);
        sol::variadic_results rc;
        rc.push_back({ L, sol::in_place_type<bool>, ok });
        rc.push_back({ L, sol::in_place_type<U64>, U64{n} });
@@ -1815,7 +1815,7 @@ namespace tools {
         "add_address_book_row",           &wallet2_interface::add_address_book_row,
         "set_address_book_row",           &wallet2_interface::set_address_book_row,
         "get_address_book_row_id",        &wallet2_interface::get_address_book_row_id,
-        "is_address_book_row_channel",    &wallet2_interface::is_address_book_row_channel,
+        "is_address_book_row_multi_user", &wallet2_interface::is_address_book_row_multi_user,
         "do_message_chat_send",           &wallet2_interface::do_message_chat_send,
         "add_message_to_chat",            &wallet2_interface::add_message_to_chat,
         "get_message_from_chat",          &wallet2_interface::get_message_from_chat,
@@ -1888,14 +1888,14 @@ namespace tools {
        const cryptonote::account_public_address& chat,
        uint64_t n,
        const cryptonote::account_public_address& sender,
-       const std::string& text,
-       uint64_t timestamp)
+       const std::string& text, bool enable_comments,
+       uint64_t timestamp, const crypto::hash& parent)
   {
     auto f = meth_.find("on_message_chat_received");
     if(f != meth_.end()) {
       std::lock_guard<std::mutex> lock(lua_mx_);
       sol::protected_function_result pfr = f->second(
-        interface_, U64{height}, txid, type, freq, chat, U64{n}, sender, text, U64{timestamp});
+        interface_, U64{height}, txid, type, freq, chat, U64{n}, sender, text, enable_comments, U64{timestamp}, parent);
       if(!pfr.valid()) {
         sol::error err = pfr;
         sol::call_status status = pfr.status();

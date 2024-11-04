@@ -794,6 +794,7 @@ private:
     {
       cryptonote::account_public_address m_sender;
       std::string m_text;
+      bool m_enable_comments;
       uint64_t m_height;
       uint64_t m_timestamp;
       crypto::hash m_txid;
@@ -802,6 +803,7 @@ private:
         VERSION_FIELD(0)
         FIELD(m_sender)
         FIELD(m_text)
+        FIELD(m_enable_comments)
         FIELD(m_height)
         FIELD(m_timestamp)
         FIELD(m_txid)
@@ -813,12 +815,16 @@ private:
       std::string m_text;
       crypto::hash m_chat;
       crypto::hash m_sender;
+      crypto::hash m_parent;
+      bool m_enable_comments;
 
       BEGIN_SERIALIZE_OBJECT()
         VERSION_FIELD(0)
         FIELD(m_text)
         FIELD(m_chat)
         FIELD(m_sender)
+        FIELD(m_parent)
+        FIELD(m_enable_comments)
       END_SERIALIZE()
     };
 
@@ -1505,22 +1511,35 @@ private:
     bool set_address_book_row(size_t row_id, const address_book_row& row);
     bool get_address_book_row_id(const cryptonote::account_public_address &address, size_t &row_id);
     bool get_address_book_row_id(const crypto::hash &addr, size_t &row_id);
-    bool is_address_book_row_channel(size_t row_id);
+    bool is_address_book_row_multi_user(size_t row_id);
     bool delete_address_book_row(std::size_t row_id);
 
-    bool add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, uint64_t amount, bool unprunable, uint64_t& n);
+    bool add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
     bool get_message_from_chat(const cryptonote::account_public_address& chat, uint64_t n, message_list_row& row);
-    bool db_message_chat_add(uint64_t& n, const cryptonote::account_public_address& chat, const cryptonote::account_public_address& sender, const std::string& text, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL));
+    bool get_message_chat_parent(const cryptonote::account_public_address& chat, crypto::hash& parent);
+    bool db_message_chat_add(uint64_t& n, const cryptonote::account_public_address& chat, const cryptonote::account_public_address& sender, const std::string& text, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
     uint64_t get_message_chat_size(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_unread(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_height(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_timestamp(const cryptonote::account_public_address& chat);
 
+
+    bool add_message_to_chat(const crypto::hash& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
+    bool get_message_from_chat(const crypto::hash& chat, uint64_t n, message_list_row& row);
+    bool get_message_from_txid(const crypto::hash& txid, message_list_row& row);
+    bool get_message_chat_parent(const crypto::hash& chat, crypto::hash& parent);
+    bool db_message_chat_add(uint64_t& n, const crypto::hash& chat, const crypto::hash& sender, const std::string& text, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
+    uint64_t get_message_chat_size(const crypto::hash& chat);
+    uint64_t get_message_chat_unread(const crypto::hash& chat);
+    uint64_t get_message_chat_height(const crypto::hash& chat);
+    uint64_t get_message_chat_timestamp(const crypto::hash& chat);
+
     bool on_message_chat_received(uint64_t height, const crypto::hash& txid, const crypto::secret_key &view_key, uint64_t type, uint64_t freq, const std::string& data, uint64_t timestamp);
     bool on_message_chat_removed(const crypto::hash& txid);
-    bool on_atomic_swap_x_received(const crypto::hash& txid, const std::string& x);
+    bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
+    bool do_message_chat_send(const crypto::hash& chat, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
 
-    bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq);
+    bool on_atomic_swap_x_received(const crypto::hash& txid, const std::string& x);
 
     bool lua_call(const std::string& name, const std::string& pars, func_t reply);
     bool lua_call(const std::string& name, const std::string& pars);

@@ -265,7 +265,7 @@ struct AddressBook
     virtual bool addRow(const AddressBookRow& row) = 0;  
     virtual bool deleteRow(std::size_t rowId) = 0;
     virtual bool setDescription(std::size_t index, const std::string &description) = 0;
-    virtual bool isChannel(std::size_t index) = 0;
+    virtual bool isMultiUser(std::size_t index) = 0;
     virtual void refresh() = 0;  
     virtual std::string errorString() const = 0;
     virtual int errorCode() const = 0;
@@ -281,15 +281,23 @@ struct MessageList
     };
     virtual ~MessageList() = 0;
 
-    virtual bool send(const std::string& chat, const std::string& text, uint64_t amount, bool unprunable, uint64_t& n) = 0;
-    virtual bool put(uint64_t& n, const std::string& chat, const std::string& text, const std::string& txid, uint64_t height = 0, uint64_t timestamp = time(NULL)) = 0;
+    virtual bool send(const std::string& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const std::string& parent = std::string()) = 0;
+    virtual bool put(uint64_t& n, const std::string& chat, const std::string& text, bool enable_comments, const std::string& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const std::string& parent = std::string()) = 0;
     virtual bool get(const std::string& chat,
                      uint64_t n,
                      std::string& sender,
                      std::string& text,
+                     bool& enable_comments,
                      uint64_t& height,
                      uint64_t& ts,
                      std::string& txid) = 0;
+    virtual bool get(const std::string& txid,
+                     std::string& sender,
+                     std::string& text,
+                     bool& enable_comments,
+                     uint64_t& height,
+                     uint64_t& ts) = 0;
+    virtual bool getParent(const std::string& chat, std::string& parent) = 0;
     virtual uint64_t getCnt(const std::string& chat) = 0;
     virtual uint64_t getUnread(const std::string& chat) = 0;
     virtual uint64_t getLastTime(const std::string& chat) = 0;

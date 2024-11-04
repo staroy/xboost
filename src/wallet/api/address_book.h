@@ -45,7 +45,7 @@ public:
     std::vector<AddressBookRow*> getAll() const override;
     bool addRow(const AddressBookRow& row) override;
     bool setDescription(std::size_t index, const std::string &description) override;
-    bool isChannel(std::size_t index) override;
+    bool isMultiUser(std::size_t index) override;
     bool deleteRow(std::size_t rowId) override;
      
     // Error codes. See AddressBook:ErrorCode enum in wallet2_api.h

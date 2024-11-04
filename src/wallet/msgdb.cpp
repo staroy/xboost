@@ -32,6 +32,7 @@ namespace tools
     : m_db(filename)
     , m_data(m_db, "D")
     , m_idx(m_db, "I")
+    , m_parent(m_db, "P")
     , m_last_reading(m_db, "R")
     , m_last_timestamp(m_db, "T")
     , m_cache_limit(cache_limit)
@@ -40,7 +41,7 @@ namespace tools
     crypto::cn_fast_hash(m_wallet->get_account().get_keys().m_view_secret_key.data, sizeof(crypto::public_key), m_salt);
   }
 
-  bool msgdb::add(const crypto::hash &txid, const message_data& in_data, uint64_t& n)
+  bool msgdb::add(const crypto::hash &txid, const message_data& in_data, uint64_t& n, const crypto::hash &parent)
   {
     try
     {
@@ -94,13 +95,21 @@ namespace tools
         o++; order = o;
       }
 
-      lldb::Batch B(m_data, m_idx);
+      lldb::Batch B(m_data, m_idx, m_parent);
 
       m_data.put(txid, {oss2.str().data(), oss2.str().size()});
       lldb::OutVal key;
       key += data.chat;
       key += order;
       m_idx.put(key, txid);
+
+      if(parent != crypto::null_hash)
+      {
+        lldb::OutVal out;
+        if(!m_parent.get(data.chat, out))
+          m_parent.put(data.chat, parent);
+        m_cache_parent[data.chat] = parent;
+      }
 
       B.write();
 
@@ -460,13 +469,37 @@ namespace tools
     return true;
   }
 
+  bool msgdb::get_parent(const crypto::hash &chat, crypto::hash &parent)
+  {
+    auto it = m_cache_parent.find(chat);
+    if(it != m_cache_parent.end())
+    {
+      parent = it->second;
+      return true;
+    }
+    lldb::OutVal out;
+    if(m_parent.get(chat, out))
+    {
+      parent = out.get<crypto::hash>();
+      m_cache_parent[chat] = parent;
+      return true;
+    }
+    return false;
+  }
+
   crypto::hash msgdb::to_hash(const cryptonote::account_public_address &chat)
   {
-    crypto::hash hash[3], res;
-    crypto::cn_fast_hash(chat.m_spend_public_key.data, sizeof(crypto::public_key), hash[0]);
-    crypto::cn_fast_hash(chat.m_view_public_key.data, sizeof(crypto::public_key), hash[1]);
-    hash[2] = m_salt;
-    crypto::tree_hash(hash, 3, res);
+    crypto::hash hash[2], res;
+    crypto::cn_fast_hash(&chat, sizeof(chat), hash[0]);
+    hash[1] = m_salt;
+    crypto::tree_hash(hash, 2, res);
+    return res;
+  }
+
+  crypto::hash msgdb::to_hash(const crypto::hash &chat)
+  {
+    crypto::hash hash[] = {chat, m_salt}, res;
+    crypto::tree_hash(hash, 2, res);
     return res;
   }
 }
