@@ -4536,7 +4536,12 @@ bool wallet2::on_message_chat_received(uint64_t height, const crypto::hash& txid
       uint64_t n = 0;
       if(type == MSG_TX_EXTRA_TYPE && freq == MSG_TX_EXTRA_FREQ_0)
       {
-        if(db_message_chat_add(n, message.m_chat, message.m_sender, message.m_text, message.m_enable_comments, txid, height, timestamp, message.m_parent))
+        bool r;
+        if(message.m_parent == crypto::null_hash)
+          r = db_message_chat_add(n, chat, sender, message.m_text, message.m_enable_comments, txid, height, timestamp, message.m_parent);
+        else
+          r = db_message_chat_add(n, message.m_chat, message.m_sender, message.m_text, message.m_enable_comments, txid, height, timestamp, message.m_parent);
+        if(r)
         {
           if (0 != m_callback)
             m_callback->on_msg_received(chat, n, txid);
