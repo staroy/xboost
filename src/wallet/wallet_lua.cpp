@@ -133,7 +133,7 @@ namespace tools {
       uint64_t get_message_chat_timestamp(const cryptonote::account_public_address& chat);
       void commit_tx(tools::wallet2::pending_tx& ptx);
       sol::variadic_results get_transfers(sol::this_state L);
-      sol::variadic_results create_transaction(const cryptonote::account_public_address &addr, bool is_subaddress, const U64& amount, int mixin_count, const U64& unlock_time, const tx_extra_data_t& tx_extra_data, std::string extra_nonce, int priority, int subaddr_account, std::vector<int> subaddr_indices_array, sol::this_state L);
+      sol::variadic_results create_transaction(const cryptonote::account_public_address &addr, bool is_subaddress, const U64& amount, int mixin_count, const U64& unlock_time, const tx_extra_data_t& tx_extra_data, std::string extra_nonce, int priority, int subaddr_account, std::vector<int> subaddr_indices_array, bool subtract_fee, sol::this_state L);
       std::string get_tx_proof(const crypto::hash &txid, const cryptonote::account_public_address &address, bool is_subaddress, const std::string &message);
       sol::variadic_results check_tx_proof(const crypto::hash &txid, const cryptonote::account_public_address &address, bool is_subaddress, const std::string &message, const std::string &sig_str, sol::this_state L);
       void set_refresh_from_block_height(const U64& height) { wallet_->set_refresh_from_block_height(height.v); }
@@ -419,6 +419,7 @@ namespace tools {
       int priority,
       int subaddr_account,
       std::vector<int> subaddr_indices_array,
+      bool subtract_fee,
       sol::this_state L)
     {
       bool ok = true;
@@ -463,8 +464,11 @@ namespace tools {
           mixin_count = std::min<int>(std::max(mixin_count, 1), wallet_->get_max_ring_size());
           size_t fake_outs_count = mixin_count - 1;
 
+          tools::wallet2::unique_index_container subtract_fee_from_outputs;
+          if(subtract_fee) subtract_fee_from_outputs.insert(0);
+
           ptx = wallet_->create_transactions_2(dsts, fake_outs_count, unlock_time.v,
-                       adjusted_priority, extra, subaddr_account, subaddr_indices);
+                       adjusted_priority, extra, subaddr_account, subaddr_indices, subtract_fee_from_outputs);
 
           // If the device being used is HW device with cold signing protocol, cold sign then.
           if (wallet_->get_account().get_device().has_tx_cold_sign())

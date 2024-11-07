@@ -585,7 +585,8 @@ function atomic_swap:creator_transfer_locked_coin_to_shared()
     "", -- extra_nonce,
     PRIORITY,
     0, -- subaddr_account,
-    {} -- subaddr_indices_array,
+    {}, -- subaddr_indices_array,
+    false
   )
 
   if ok then
@@ -707,18 +708,20 @@ function atomic_swap:creator_transfer_locked_coin_from_shared()
   extra:set_x(self.CReceiver.X)
   extra:set_sign_x(sign)
   local to_addr = tools.wallet:get_address()
+  local amount = root._shared:balance_all(false)
 
   local ok, pptx, signers, err = root._shared:create_transaction(
     to_addr, -- account_public_address
     false, -- is_subaddress
-    self.CReceiver.amount,
-    1, -- fake_outs is 0, MIXIN_COUNT = 1,
+    amount, -- self.CReceiver.amount,
+    0, -- fake_outs is 0, MIXIN_COUNT = 1,
     tools.uint64_t(0), -- unlock_time,
     extra,
     "", -- extra_nonce,
     PRIORITY,
     0, -- subaddr_account,
-    {} -- subaddr_indices_array,
+    {}, -- subaddr_indices_array,
+    true -- subtract_fee
   )
 
   if ok then
@@ -770,7 +773,8 @@ function atomic_swap:acceptor_transfer_locked_coin_to_shared()
     "", -- extra_nonce,
     PRIORITY,
     0, -- subaddr_account,
-    {} -- subaddr_indices_array,
+    {}, -- subaddr_indices_array,
+    false -- subtract_fee
   )
 
   if ok then
@@ -812,18 +816,20 @@ function atomic_swap:acceptor_transfer_locked_coin_from_shared(X)
   extra:set_x(X)
   extra:set_sign_x(sign)
   local to_addr = tools.wallet:get_address()
+  local amount = root._shared:balance_all(false)
 
   local ok, pptx, signers, err = root._shared:create_transaction(
     to_addr, -- account_public_address
     false, -- is_subaddress
-    root.AReceiver.amount,
-    1, -- fake_outs is 0, MIXIN_COUNT = 1,
+    amount, -- root.AReceiver.amount,
+    0, -- fake_outs is 0, MIXIN_COUNT = 1,
     tools.uint64_t(0), -- unlock_time,
     extra,
     "", -- extra_nonce,
     PRIORITY,
     0, -- subaddr_account,
-    {} -- subaddr_indices_array,
+    {}, -- subaddr_indices_array,
+    true -- subtract_fee
   )
 
   if ok then
