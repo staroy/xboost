@@ -48,12 +48,14 @@ set(wallet_sources
   wallet2.cpp
   wallet_args.cpp
   ringdb.cpp
+  addrdb.cpp
   msgdb.cpp
   node_rpc_proxy.cpp
   message_store.cpp
   message_transporter.cpp
   wallet_rpc_payments.cpp
   wallet_lua.cpp
+  wallet_lua_json.cpp
   packjson.cpp
   zyre/zyre.cpp
   zyre/timeout.cpp

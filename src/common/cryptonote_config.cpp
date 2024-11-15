@@ -32,6 +32,7 @@ uint64_t MAX_TX_EXTRA_SIZE     = MAX_TX_EXTRA_SIZE_DEFAULT;
 uint64_t MAX_TX_EXTRA_MSG_SIZE = MAX_TX_EXTRA_MSG_SIZE_DEFAULT;
 uint64_t MAX_TX_MSG_PRUNABLE_SIZE = MAX_TX_MSG_PRUNABLE_SIZE_DEFAULT;
 uint64_t MSG_TX_AMOUNT         = MSG_TX_AMOUNT_DEFAULT;
+uint64_t FEE_PER_KB_MESSAGE_MULTIPLIER = FEE_PER_KB_MESSAGE_MULTIPLIER_DEFAULT;
 
 uint64_t BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW = BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW_DEFAULT;
 uint64_t CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW = CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW_DEFAULT;
@@ -105,6 +106,8 @@ namespace config
     "COIN", "COIN - number of smallest units in one coin", COIN_DEFAULT };
   const command_line::arg_descriptor<uint64_t> arg_MSG_TX_AMOUNT = {
     "MSG_TX_AMOUNT", "MSG_TX_AMOUNT - number of smallest units in one coin", MSG_TX_AMOUNT_DEFAULT };
+  const command_line::arg_descriptor<uint64_t> arg_FEE_PER_KB_MESSAGE_MULTIPLIER = {
+    "FEE_PER_KB_MESSAGE_MULTIPLIER", "FEE_PER_KB_MESSAGE_MULTIPLIER - message fee per kb multiplier", FEE_PER_KB_MESSAGE_MULTIPLIER_DEFAULT };
   const command_line::arg_descriptor<uint64_t> arg_DIFFICULTY_TARGET_V2 = {
     "DIFFICULTY_TARGET_V2", "120 seconds per block", DIFFICULTY_TARGET_V2_DEFAULT };
   const command_line::arg_descriptor<uint64_t> arg_DIFFICULTY_TARGET_V1 = {
@@ -219,6 +222,7 @@ namespace config
       command_line::add_arg(option_spec, arg_MAX_TX_EXTRA_MSG_SIZE);
       command_line::add_arg(option_spec, arg_MAX_TX_MSG_PRUNABLE_SIZE);
       command_line::add_arg(option_spec, arg_MSG_TX_AMOUNT);
+      command_line::add_arg(option_spec, arg_FEE_PER_KB_MESSAGE_MULTIPLIER);
       command_line::add_arg(option_spec, arg_CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
       command_line::add_arg(option_spec, arg_CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE);
       command_line::add_arg(option_spec, arg_BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW);
@@ -282,6 +286,7 @@ namespace config
       MAX_TX_EXTRA_MSG_SIZE                                 = command_line::get_arg(vm, arg_MAX_TX_EXTRA_MSG_SIZE);
       MAX_TX_MSG_PRUNABLE_SIZE                              = command_line::get_arg(vm, arg_MAX_TX_MSG_PRUNABLE_SIZE);
       MSG_TX_AMOUNT                                         = command_line::get_arg(vm, arg_MSG_TX_AMOUNT);
+      FEE_PER_KB_MESSAGE_MULTIPLIER                         = command_line::get_arg(vm, arg_FEE_PER_KB_MESSAGE_MULTIPLIER);
       CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW                  = command_line::get_arg(vm, arg_CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW);
       CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE                   = command_line::get_arg(vm, arg_CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE); 
       BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW                     = command_line::get_arg(vm, arg_BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW);   
@@ -404,7 +409,7 @@ namespace config
 {
   crypto::hash get_cryptonote_config_hash()
   {
-      crypto::hash hash[27];
+      crypto::hash hash[28];
 
       crypto::cn_fast_hash(CRYPTONOTE_NAME.c_str(), CRYPTONOTE_NAME.length(), hash[0]);
       crypto::cn_fast_hash(COIN_NAME.c_str(), COIN_NAME.length(), hash[1]);
@@ -415,32 +420,33 @@ namespace config
       crypto::cn_fast_hash(&CRYPTONOTE_DISPLAY_DECIMAL_POINT, sizeof(CRYPTONOTE_DISPLAY_DECIMAL_POINT), hash[6]);
       crypto::cn_fast_hash(&COIN, sizeof(COIN), hash[7]);
       crypto::cn_fast_hash(&MSG_TX_AMOUNT, sizeof(MSG_TX_AMOUNT), hash[8]);
-      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[9]);
-      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[10]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[11]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[12]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[13]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[14]);
-      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[15]);
-      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[16]);
-      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[17]);
-      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[18]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[19]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[20]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[21]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[22]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[23]);
-      crypto::cn_fast_hash(&GENESIS_NONCE, sizeof(GENESIS_NONCE), hash[24]);
-      crypto::cn_fast_hash(&GENESIS_TIMESTAMP, sizeof(GENESIS_TIMESTAMP), hash[25]);
-      crypto::cn_fast_hash(NETWORK_ID.data, NETWORK_ID.size(), hash[26]);
+      crypto::cn_fast_hash(&FEE_PER_KB_MESSAGE_MULTIPLIER, sizeof(FEE_PER_KB_MESSAGE_MULTIPLIER), hash[9]);
+      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[10]);
+      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[11]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[12]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[13]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[14]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[15]);
+      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[16]);
+      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[17]);
+      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[18]);
+      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[19]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[20]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[21]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[22]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[23]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[24]);
+      crypto::cn_fast_hash(&GENESIS_NONCE, sizeof(GENESIS_NONCE), hash[25]);
+      crypto::cn_fast_hash(&GENESIS_TIMESTAMP, sizeof(GENESIS_TIMESTAMP), hash[26]);
+      crypto::cn_fast_hash(NETWORK_ID.data, NETWORK_ID.size(), hash[27]);
 
       crypto::hash r;
-      crypto::tree_hash(hash, 27, r);
+      crypto::tree_hash(hash, 28, r);
       return r;
   }
   crypto::hash get_testnet_cryptonote_config_hash()
   {
-      crypto::hash hash[27];
+      crypto::hash hash[28];
 
       crypto::cn_fast_hash(CRYPTONOTE_NAME.c_str(), CRYPTONOTE_NAME.length(), hash[0]);
       crypto::cn_fast_hash(COIN_NAME.c_str(), COIN_NAME.length(), hash[1]);
@@ -451,33 +457,34 @@ namespace config
       crypto::cn_fast_hash(&CRYPTONOTE_DISPLAY_DECIMAL_POINT, sizeof(CRYPTONOTE_DISPLAY_DECIMAL_POINT), hash[6]);
       crypto::cn_fast_hash(&COIN, sizeof(COIN), hash[7]);
       crypto::cn_fast_hash(&MSG_TX_AMOUNT, sizeof(MSG_TX_AMOUNT), hash[8]);
-      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[9]);
-      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[10]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[11]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[12]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[13]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[14]);
-      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[15]);
-      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[16]);
-      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[17]);
-      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[18]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[19]);
-      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[20]);
-      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[21]);
-      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[22]);
-      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[23]);
-      crypto::cn_fast_hash(&testnet::GENESIS_NONCE, sizeof(testnet::GENESIS_NONCE), hash[24]);
-      crypto::cn_fast_hash(&testnet::GENESIS_TIMESTAMP, sizeof(testnet::GENESIS_TIMESTAMP), hash[25]);
-      crypto::cn_fast_hash(testnet::NETWORK_ID.data, testnet::NETWORK_ID.size(), hash[26]);
+      crypto::cn_fast_hash(&FEE_PER_KB_MESSAGE_MULTIPLIER, sizeof(FEE_PER_KB_MESSAGE_MULTIPLIER), hash[9]);
+      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[10]);
+      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[11]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[12]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[13]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[14]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[15]);
+      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[16]);
+      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[17]);
+      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[18]);
+      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[19]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[20]);
+      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[21]);
+      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[22]);
+      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[23]);
+      crypto::cn_fast_hash(&testnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(testnet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[24]);
+      crypto::cn_fast_hash(&testnet::GENESIS_NONCE, sizeof(testnet::GENESIS_NONCE), hash[25]);
+      crypto::cn_fast_hash(&testnet::GENESIS_TIMESTAMP, sizeof(testnet::GENESIS_TIMESTAMP), hash[26]);
+      crypto::cn_fast_hash(testnet::NETWORK_ID.data, testnet::NETWORK_ID.size(), hash[27]);
 
       crypto::hash r;
-      crypto::tree_hash(hash, 27, r);
+      crypto::tree_hash(hash, 28, r);
       return r;
   }
 
   crypto::hash get_stagenet_cryptonote_config_hash()
   {
-      crypto::hash hash[27];
+      crypto::hash hash[28];
 
       crypto::cn_fast_hash(CRYPTONOTE_NAME.c_str(), CRYPTONOTE_NAME.length(), hash[0]);
       crypto::cn_fast_hash(COIN_NAME.c_str(), COIN_NAME.length(), hash[1]);
@@ -488,27 +495,28 @@ namespace config
       crypto::cn_fast_hash(&CRYPTONOTE_DISPLAY_DECIMAL_POINT, sizeof(CRYPTONOTE_DISPLAY_DECIMAL_POINT), hash[6]);
       crypto::cn_fast_hash(&COIN, sizeof(COIN), hash[7]);
       crypto::cn_fast_hash(&MSG_TX_AMOUNT, sizeof(MSG_TX_AMOUNT), hash[8]);
-      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[9]);
-      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[10]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[11]);
-      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[12]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[13]);
-      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[14]);
-      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[15]);
-      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[16]);
-      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[17]);
-      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[18]);
-      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[19]);
-      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[20]);
-      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[21]);
-      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[22]);
-      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[23]);
-      crypto::cn_fast_hash(&stagenet::GENESIS_NONCE, sizeof(stagenet::GENESIS_NONCE), hash[24]);
-      crypto::cn_fast_hash(&stagenet::GENESIS_TIMESTAMP, sizeof(stagenet::GENESIS_TIMESTAMP), hash[25]);
-      crypto::cn_fast_hash(stagenet::NETWORK_ID.data, stagenet::NETWORK_ID.size(), hash[26]);
+      crypto::cn_fast_hash(&FEE_PER_KB_MESSAGE_MULTIPLIER, sizeof(FEE_PER_KB_MESSAGE_MULTIPLIER), hash[9]);
+      crypto::cn_fast_hash(&EMISSION_SPEED_FACTOR_PER_MINUTE, sizeof(EMISSION_SPEED_FACTOR_PER_MINUTE), hash[10]);
+      crypto::cn_fast_hash(&FINAL_SUBSIDY_PER_MINUTE, sizeof(FINAL_SUBSIDY_PER_MINUTE), hash[11]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V2, sizeof(DIFFICULTY_TARGET_V2), hash[12]);
+      crypto::cn_fast_hash(&DIFFICULTY_TARGET_V1, sizeof(DIFFICULTY_TARGET_V1), hash[13]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_SIZE, sizeof(MAX_TX_EXTRA_SIZE), hash[14]);
+      crypto::cn_fast_hash(&MAX_TX_EXTRA_MSG_SIZE, sizeof(MAX_TX_EXTRA_MSG_SIZE), hash[15]);
+      crypto::cn_fast_hash(&MAX_TX_MSG_PRUNABLE_SIZE, sizeof(MAX_TX_MSG_PRUNABLE_SIZE), hash[16]);
+      crypto::cn_fast_hash(&CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, sizeof(CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW), hash[17]);
+      crypto::cn_fast_hash(&CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, sizeof(CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), hash[18]);
+      crypto::cn_fast_hash(&BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW, sizeof(BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW), hash[19]);
+      crypto::cn_fast_hash(&CRYPTONOTE_PRUNING_TIP_BLOCKS, sizeof(CRYPTONOTE_PRUNING_TIP_BLOCKS), hash[20]);
+      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX), hash[21]);
+      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_CHANNEL_ADDRESS_BASE58_PREFIX), hash[22]);
+      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX), hash[23]);
+      crypto::cn_fast_hash(&stagenet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX, sizeof(stagenet::CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX), hash[24]);
+      crypto::cn_fast_hash(&stagenet::GENESIS_NONCE, sizeof(stagenet::GENESIS_NONCE), hash[25]);
+      crypto::cn_fast_hash(&stagenet::GENESIS_TIMESTAMP, sizeof(stagenet::GENESIS_TIMESTAMP), hash[26]);
+      crypto::cn_fast_hash(stagenet::NETWORK_ID.data, stagenet::NETWORK_ID.size(), hash[27]);
 
       crypto::hash r;
-      crypto::tree_hash(hash, 27, r);
+      crypto::tree_hash(hash, 28, r);
       return r;
   }
 }

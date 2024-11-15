@@ -72,7 +72,7 @@ Wallet *WalletManagerImpl::openWallet(const std::string &path, const std::string
 
     wallet->open(path, password);
     //Refresh addressBook
-    wallet->addressBook()->refresh(); 
+    //wallet->addressBook()->refresh(); 
     return wallet;
 }
 
@@ -174,8 +174,9 @@ bool WalletManagerImpl::walletExists(const std::string &path)
 {
     bool keys_file_exists;
     bool wallet_file_exists;
+    bool address_book_file_exists;
     bool message_file_exists;
-    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, message_file_exists);
+    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
     if(keys_file_exists){
         return true;
     }

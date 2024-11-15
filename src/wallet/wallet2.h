@@ -96,6 +96,7 @@ namespace tools
   class ringdb;
   class wallet2;
   class Notify;
+  class addrdb;
 
   class gamma_picker
   {
@@ -144,7 +145,9 @@ private:
     virtual void on_reorg(uint64_t height, uint64_t blocks_detached, size_t transfers_detached) {}
     virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, uint64_t burnt, const cryptonote::subaddress_index& subaddr_index, bool is_change, uint64_t unlock_time) {}
     virtual void on_msg_received(const cryptonote::account_public_address& chat, uint64_t n, const crypto::hash &txid) {}
+    virtual void on_msg_received(const crypto::hash& chat, uint64_t n, const crypto::hash &txid) {}
     virtual void on_msg_removed(const cryptonote::account_public_address& chat, uint64_t n, const crypto::hash &txid) {}
+    virtual void on_msg_removed(const crypto::hash& chat, uint64_t n, const crypto::hash &txid) {}
     virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) {}
     virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index) {}
     virtual void on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx) {}
@@ -765,7 +768,9 @@ private:
       std::string m_description;
       bool m_is_subaddress;
       bool m_has_payment_id;
+      bool m_has_spend_skey;
       bool m_has_view_skey;
+      crypto::secret_key m_spend_skey;
       crypto::secret_key m_view_skey;
       std::string m_ab;
       uint8_t m_ab_color[3];
@@ -779,7 +784,9 @@ private:
         FIELD(m_description)
         FIELD(m_is_subaddress)
         FIELD(m_has_payment_id)
+        FIELD(m_has_spend_skey)
         FIELD(m_has_view_skey)
+        FIELD(m_spend_skey)
         FIELD(m_view_skey)
         FIELD(m_ab)
         ar.serialize_blob(m_ab_color, 3);
@@ -1285,7 +1292,7 @@ private:
       a & m_pub_keys.parent();
       if(ver < 16)
         return;
-      a & m_address_book;
+      //a & m_address_book;
       if(ver < 17)
         return;
       if (ver < 22)
@@ -1357,7 +1364,7 @@ private:
       FIELD(m_tx_notes)
       FIELD(m_unconfirmed_payments)
       FIELD(m_pub_keys)
-      FIELD(m_address_book)
+      //FIELD(m_address_book)
       FIELD(m_scanned_pool_txs[0])
       FIELD(m_scanned_pool_txs[1])
       FIELD(m_subaddresses)
@@ -1385,7 +1392,7 @@ private:
      * \param  keys_file_exists    Whether keys file exists
      * \param  wallet_file_exists  Whether bin file exists
      */
-    static void wallet_exists(const std::string& file_path, bool& keys_file_exists, bool& wallet_file_exists, bool& message_file_exists);
+    static void wallet_exists(const std::string& file_path, bool& keys_file_exists, bool& wallet_file_exists, bool& address_book_file_exists, bool& message_file_exists);
     /*!
      * \brief  Check if wallet file path is valid format
      * \param  file_path      Wallet file path
@@ -1506,13 +1513,16 @@ private:
    /*!
     * \brief GUI Address book get/store
     */
-    const std::vector<address_book_row>& get_address_book() const { return m_address_book; }
-    bool add_address_book_row(const address_book_row& row);
+    //const std::vector<address_book_row>& get_address_book() const { return m_address_book; }
+    bool new_multi_user_book_row(const std::string& description, address_book_row& row, size_t& row_id);
+    bool add_address_book_row(const address_book_row& row, size_t& row_id);
     bool set_address_book_row(size_t row_id, const address_book_row& row);
+    bool get_address_book_row(size_t row_id, address_book_row& row);
     bool get_address_book_row_id(const cryptonote::account_public_address &address, size_t &row_id);
     bool get_address_book_row_id(const crypto::hash &addr, size_t &row_id);
     bool is_address_book_row_multi_user(size_t row_id);
     bool delete_address_book_row(std::size_t row_id);
+    size_t get_address_book_count();
 
     bool add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
     bool get_message_from_chat(const cryptonote::account_public_address& chat, uint64_t n, message_list_row& row);
@@ -1944,6 +1954,7 @@ private:
     std::string m_keys_file;
     std::string m_mms_file;
     std::string m_message_file;
+    std::string m_address_book_file;
     const std::unique_ptr<epee::net_utils::http::abstract_http_client> m_http_client;
     hashchain m_blockchain;
     serializable_unordered_map<crypto::hash, unconfirmed_transfer_details> m_unconfirmed_txs;
@@ -1962,8 +1973,8 @@ private:
     std::vector<std::vector<std::string>> m_subaddress_labels;
     serializable_unordered_map<crypto::hash, std::string> m_tx_notes;
     serializable_unordered_map<std::string, std::string> m_attributes;
-    std::vector<tools::wallet2::address_book_row> m_address_book;
-    serializable_unordered_map<crypto::public_key, tools::wallet2::message_list_row> m_msgdb_cache;
+    //std::vector<tools::wallet2::address_book_row> m_address_book;
+    std::unique_ptr<addrdb> m_addrdb;
     std::unique_ptr<msgdb> m_msgdb;
     std::unique_ptr<lua::simple> m_lua_simple;
     std::mutex m_lua_simple_mx;

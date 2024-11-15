@@ -2960,12 +2960,14 @@ namespace tools
   bool wallet_rpc_server::on_get_address_book(const wallet_rpc::COMMAND_RPC_GET_ADDRESS_BOOK_ENTRY::request& req, wallet_rpc::COMMAND_RPC_GET_ADDRESS_BOOK_ENTRY::response& res, epee::json_rpc::error& er, const connection_context *ctx)
   {
     if (!m_wallet) return not_open(er);
-    const auto ab = m_wallet->get_address_book();
+    size_t cnt = m_wallet->get_address_book_count();
     if (req.entries.empty())
     {
       uint64_t idx = 0;
-      for (const auto &entry: ab)
+      for (size_t idx=0; idx<cnt; idx++)
       {
+        tools::wallet2::address_book_row entry;
+        m_wallet->get_address_book_row(idx, entry);
         std::string address;
         if (entry.m_has_payment_id)
           address = cryptonote::get_account_integrated_address_as_str(m_wallet->nettype(), entry.m_address, entry.m_payment_id);
@@ -2978,13 +2980,14 @@ namespace tools
     {
       for (uint64_t idx: req.entries)
       {
-        if (idx >= ab.size())
+        if (idx >= cnt)
         {
           er.code = WALLET_RPC_ERROR_CODE_WRONG_INDEX;
           er.message = "Index out of range: " + std::to_string(idx);
           return false;
         }
-        const auto &entry = ab[idx];
+        tools::wallet2::address_book_row entry;
+        m_wallet->get_address_book_row(idx, entry);
         std::string address;
         if (entry.m_has_payment_id)
           address = cryptonote::get_account_integrated_address_as_str(m_wallet->nettype(), entry.m_address, entry.m_payment_id);
@@ -3028,22 +3031,25 @@ namespace tools
         er.message = std::string("WALLET_RPC_ERROR_CODE_WRONG_ADDRESS: ") + req.address;
       return false;
     }
+    size_t row_id;
     if (!m_wallet->add_address_book_row({
                                         info.address,
                                         info.has_payment_id ? info.payment_id : crypto::null_hash8,
                                         req.description,
                                         info.is_subaddress,
                                         info.has_payment_id,
+                                        false, // has spend skey
                                         info.has_view_skey,
+                                        crypto::null_skey, // spend skey
                                         info.has_view_skey ? info.view_skey : crypto::null_skey,
                                         "", {}, {}, 0
-                                    }))
+                                    }, row_id))
     {
       er.code = WALLET_RPC_ERROR_CODE_UNKNOWN_ERROR;
       er.message = "Failed to add address book entry";
       return false;
     }
-    res.index = m_wallet->get_address_book().size() - 1;
+    res.index = m_wallet->get_address_book_count() - 1;
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -3057,15 +3063,16 @@ namespace tools
       return false;
     }
 
-    const auto ab = m_wallet->get_address_book();
-    if (req.index >= ab.size())
+    size_t cnt = m_wallet->get_address_book_count();
+    if (req.index >= cnt)
     {
       er.code = WALLET_RPC_ERROR_CODE_WRONG_INDEX;
       er.message = "Index out of range: " + std::to_string(req.index);
       return false;
     }
 
-    tools::wallet2::address_book_row entry = ab[req.index];
+    tools::wallet2::address_book_row entry;
+    m_wallet->get_address_book_row(req.index, entry);
 
     cryptonote::address_parse_info info;
     if (req.set_address)
@@ -3119,8 +3126,8 @@ namespace tools
       return false;
     }
 
-    const auto ab = m_wallet->get_address_book();
-    if (req.index >= ab.size())
+    size_t cnt = m_wallet->get_address_book_count();
+    if (req.index >= cnt)
     {
       er.code = WALLET_RPC_ERROR_CODE_WRONG_INDEX;
       er.message = "Index out of range: " + std::to_string(req.index);

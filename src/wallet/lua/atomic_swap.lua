@@ -1,5 +1,3 @@
-local JSON = require("JSON")
-
 local MSG_TX_EXTRA_TYPE = 100
 local MSG_TX_EXTRA_FREQ_0 = 0
 
@@ -252,7 +250,7 @@ end
 function atomic_swap:on_message_chat_received(height, txid, mtype, freq, chat, n, sender, data, enable_comments, timestamp, parent)
   if mtype == ATOMIC_SWAP_MSG_TX_EXTRA_TYPE and freq == MSG_TX_EXTRA_FREQ_0 then
     if not self._chat:is_txid_exist(txid) then
-      local info = JSON:decode(data)
+      local info = tools.from_json(data)
       if info.class == "atomic_swap" and info.method == "send_HX_to_acceptor" then
         local ok, addr2 = cryptonote.get_account_address_from_str(info.params.addr2)
         if not ok then
@@ -538,7 +536,7 @@ function atomic_swap:calculate_reserved_fee_for_shared()
   local use_per_byte_fee = true
   local use_rct = true
   local n_inputs = 1
-  local mixin = 0
+  local mixin = 1
   local n_outputs = 2
   local extra_size = extra:length()
   local bulletproof = true
@@ -598,6 +596,7 @@ function atomic_swap:creator_transfer_locked_coin_to_shared()
 
       print(self._event);
       print("commit txid: ", ptx.tx.txid);
+      print("fee: ", ptx.fee:print_money());
       print("amount=", amount:print_money())
       --print("hex: ", ptx.tx:to_hex());
       --print("unlock_time: ", ptx.tx.unlock_time)
@@ -736,6 +735,8 @@ function atomic_swap:creator_transfer_locked_coin_from_shared()
 
       print(self._event);
       print("commit txid: ", ptx.tx.txid);
+      print("fee: ", ptx.fee:print_money());
+      print("amount=", amount:print_money())
       print("balance: ", root._shared:balance_all(false):print_money())
     end
   else
@@ -786,6 +787,7 @@ function atomic_swap:acceptor_transfer_locked_coin_to_shared()
 
       print(root._event)
       print("commit txid: ", ptx.tx.txid);
+      print("fee: ", ptx.fee:print_money());
       print("amount=", amount:print_money())
       --print("hex: ", ptx.tx:to_hex());
       --print("unlock_time: ", ptx.tx.unlock_time)
@@ -844,6 +846,8 @@ function atomic_swap:acceptor_transfer_locked_coin_from_shared(X)
 
       print(root._event);
       print("commit txid: ", ptx.tx.txid);
+      print("fee: ", ptx.fee:print_money());
+      print("amount=", amount:print_money())
       print("balance: ", root._shared:balance_all(false):print_money())
     end
   else

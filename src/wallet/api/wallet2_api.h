@@ -220,23 +220,25 @@ struct TransactionHistory
  */
 struct AddressBookRow {
 public:
-    AddressBookRow(std::size_t _rowId, const std::string &_address, const std::string &_paymentId, const std::string &_description, const std::string &_ab, const std::string &_abColor, const std::string &_abBackground):
-        m_rowId(_rowId),
+    AddressBookRow(const std::string &_address, const std::string &_paymentId, const std::string &_description, const std::string &_ab, const std::string &_abColor, const std::string &_abBackground, bool _isMultiUser = false, bool _hasSpendKey = false):
         m_address(_address),
         m_paymentId(_paymentId), 
         m_description(_description),
         m_ab(_ab),
         m_abColor(_abColor),
-        m_abBackground(_abBackground) {}
+        m_abBackground(_abBackground),
+        m_isMultiUser(_isMultiUser),
+        m_hasSpendKey(_hasSpendKey) {}
  
 private:
-    std::size_t m_rowId;
     std::string m_address;
     std::string m_paymentId;
     std::string m_description;
     std::string m_ab;
     std::string m_abColor;
     std::string m_abBackground;
+    bool m_isMultiUser;
+    bool m_hasSpendKey;
 public:
     std::string extra;
     std::string getAddress() const {return m_address;} 
@@ -245,7 +247,8 @@ public:
     std::string getAb() const {return m_ab;}
     std::string getAbColor() const {return m_abColor;}
     std::string getAbBackground() const {return m_abBackground;}
-    std::size_t getRowId() const {return m_rowId;}
+    bool isMultiUser() const {return m_isMultiUser;}
+    bool hasSpendKey() const {return m_hasSpendKey;}
 };
 
 /**
@@ -261,15 +264,17 @@ struct AddressBook
         Invalid_Payment_Id
     };
     virtual ~AddressBook() = 0;
-    virtual std::vector<AddressBookRow*> getAll() const = 0;
-    virtual bool addRow(const AddressBookRow& row) = 0;  
+    virtual bool newMultiUserRow(const std::string& description, std::function<void(AddressBookRow& row, std::size_t rowId)> callback) = 0;
+    virtual bool addRow(const AddressBookRow& row, std::size_t& rowId) = 0;
+    virtual bool getRow(std::size_t rowId, std::function<void(AddressBookRow& row)> callback) = 0;
     virtual bool deleteRow(std::size_t rowId) = 0;
     virtual bool setDescription(std::size_t index, const std::string &description) = 0;
     virtual bool isMultiUser(std::size_t index) = 0;
-    virtual void refresh() = 0;  
+    virtual size_t count() const = 0;
     virtual std::string errorString() const = 0;
     virtual int errorCode() const = 0;
     virtual int lookupPaymentID(const std::string &payment_id) const = 0;
+    virtual int lookupAddress(const std::string &address) const = 0;
 };
 
 struct MessageList

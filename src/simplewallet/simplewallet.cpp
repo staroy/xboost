@@ -4041,6 +4041,7 @@ bool simple_wallet::ask_wallet_create_if_needed()
   bool wallet_name_valid = false;
   bool keys_file_exists;
   bool wallet_file_exists;
+  bool address_book_file_exists;
   bool message_file_exists;
 
   do{
@@ -4063,7 +4064,7 @@ bool simple_wallet::ask_wallet_create_if_needed()
       }
       else
       {
-        tools::wallet2::wallet_exists(wallet_path, keys_file_exists, wallet_file_exists, message_file_exists);
+        tools::wallet2::wallet_exists(wallet_path, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
         LOG_PRINT_L3("wallet_path: " << wallet_path << "");
         LOG_PRINT_L3("keys_file_exists: " << std::boolalpha << keys_file_exists << std::noboolalpha
         << "  wallet_file_exists: " << std::boolalpha << wallet_file_exists << std::noboolalpha);
@@ -5217,9 +5218,10 @@ boost::optional<epee::wipeable_string> simple_wallet::open_wallet(const boost::p
 
   bool keys_file_exists;
   bool wallet_file_exists;
+  bool address_book_file_exists;
   bool message_file_exists;
 
-  tools::wallet2::wallet_exists(m_wallet_file, keys_file_exists, wallet_file_exists, message_file_exists);
+  tools::wallet2::wallet_exists(m_wallet_file, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
   if(!keys_file_exists)
   {
     fail_msg_writer() << tr("Key file not found. Failed to open wallet");
@@ -10059,16 +10061,19 @@ bool simple_wallet::address_book(const std::vector<std::string> &args/* = std::v
         description += " ";
       description += args[i];
     }
+    size_t row_id;
     m_wallet->add_address_book_row({
                                        info.address,
                                        info.has_payment_id ? info.payment_id : crypto::null_hash8,
                                        description,
                                        info.is_subaddress,
                                        info.has_payment_id,
+                                       false, // has spend skey
                                        info.has_view_skey,
+                                       crypto::null_skey, // spend skey
                                        info.has_view_skey ? info.view_skey : crypto::null_skey,
                                        "", {}, {}, 0
-                                   });
+                                   }, row_id);
   }
   else
   {
@@ -10080,15 +10085,16 @@ bool simple_wallet::address_book(const std::vector<std::string> &args/* = std::v
     }
     m_wallet->delete_address_book_row(row_id);
   }
-  auto address_book = m_wallet->get_address_book();
-  if (address_book.empty())
+  size_t cnt = m_wallet->get_address_book_count();
+  if (cnt == 0)
   {
     success_msg_writer() << tr("Address book is empty.");
   }
   else
   {
-    for (size_t i = 0; i < address_book.size(); ++i) {
-      auto& row = address_book[i];
+    for (size_t i = 0; i < cnt; ++i) {
+      tools::wallet2::address_book_row row;
+      m_wallet->get_address_book_row(i, row);
       success_msg_writer() << tr("Index: ") << i;
       std::string address;
       if (row.m_has_view_skey)

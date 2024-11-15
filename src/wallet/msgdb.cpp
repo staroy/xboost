@@ -38,7 +38,7 @@ namespace tools
     , m_cache_limit(cache_limit)
     , m_wallet(wallet)
   {
-    crypto::cn_fast_hash(m_wallet->get_account().get_keys().m_view_secret_key.data, sizeof(crypto::public_key), m_salt);
+    crypto::cn_fast_hash(m_wallet->get_account().get_keys().m_view_secret_key.data, sizeof(crypto::secret_key), m_salt);
   }
 
   bool msgdb::add(const crypto::hash &txid, const message_data& in_data, uint64_t& n, const crypto::hash &parent)

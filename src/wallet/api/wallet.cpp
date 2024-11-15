@@ -223,32 +223,89 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
             size_t a;
             if(m_wallet->m_wallet->get_address_book_row_id(chat, a))
             {
-               const tools::wallet2::address_book_row& row = m_wallet->m_wallet->get_address_book()[a];
-               m_listener->msgReceived(
-                 row.m_has_view_skey ? 
-                   cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), chat.m_spend_public_key, row.m_view_skey) :
-                   cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, chat),
-                 n, epee::string_tools::pod_to_hex(txid));
-               m_listener->updated();
+                tools::wallet2::address_book_row row;
+                if(m_wallet->m_wallet->get_address_book_row(a, row))
+                {
+                    m_listener->msgReceived(
+                        row.m_has_view_skey ? 
+                           cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), chat.m_spend_public_key, row.m_view_skey) :
+                           cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, chat),
+                        n, epee::string_tools::pod_to_hex(txid));
+                    m_listener->updated();
+                }
             }
         }
     }
 
-    virtual void on_msg_removed(const cryptonote::account_public_address& chat, bool is_channel, uint64_t n, const crypto::hash &txid)
+    virtual void on_msg_received(const crypto::hash& chat, uint64_t n, const crypto::hash &txid)
     {
-
         LOG_PRINT_L3(__FUNCTION__ << ": msg received");
         if (m_listener && m_wallet->synchronized()) {
             size_t a;
             if(m_wallet->m_wallet->get_address_book_row_id(chat, a))
             {
-               const tools::wallet2::address_book_row& row = m_wallet->m_wallet->get_address_book()[a];
-               m_listener->msgRemoved(
-                 row.m_has_view_skey ?
-                   cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), chat.m_spend_public_key, row.m_view_skey) :
-                   cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, chat),
-                 n, epee::string_tools::pod_to_hex(txid));
-               m_listener->updated();
+                tools::wallet2::address_book_row row;
+                if(m_wallet->m_wallet->get_address_book_row(a, row))
+                {
+                    m_listener->msgReceived(
+                        row.m_has_view_skey ? 
+                           cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), row.m_address.m_spend_public_key, row.m_view_skey) :
+                           cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, row.m_address),
+                        n, epee::string_tools::pod_to_hex(txid));
+                    m_listener->updated();
+                }
+            }
+            else
+            {
+                m_listener->msgReceived(epee::string_tools::pod_to_hex(chat), n, epee::string_tools::pod_to_hex(txid));
+                m_listener->updated();
+            }
+        }
+    }
+
+    virtual void on_msg_removed(const cryptonote::account_public_address& chat, uint64_t n, const crypto::hash &txid)
+    {
+        LOG_PRINT_L3(__FUNCTION__ << ": msg received");
+        if (m_listener && m_wallet->synchronized()) {
+            size_t a;
+            if(m_wallet->m_wallet->get_address_book_row_id(chat, a))
+            {
+                tools::wallet2::address_book_row row;
+                if(m_wallet->m_wallet->get_address_book_row(a, row))
+                {
+                    m_listener->msgRemoved(
+                        row.m_has_view_skey ?
+                            cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), chat.m_spend_public_key, row.m_view_skey) :
+                            cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, chat),
+                        n, epee::string_tools::pod_to_hex(txid));
+                    m_listener->updated();
+                }
+            }
+        }
+    }
+
+    virtual void on_msg_removed(const crypto::hash& chat, uint64_t n, const crypto::hash &txid)
+    {
+        LOG_PRINT_L3(__FUNCTION__ << ": msg received");
+        if (m_listener && m_wallet->synchronized()) {
+            size_t a;
+            if(m_wallet->m_wallet->get_address_book_row_id(chat, a))
+            {
+                tools::wallet2::address_book_row row;
+                if(m_wallet->m_wallet->get_address_book_row(a, row))
+                {
+                    m_listener->msgRemoved(
+                        row.m_has_view_skey ?
+                            cryptonote::get_account_channel_address_as_str(m_wallet->m_wallet->nettype(), row.m_address.m_spend_public_key, row.m_view_skey) :
+                            cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), row.m_is_subaddress, row.m_address),
+                        n, epee::string_tools::pod_to_hex(txid));
+                    m_listener->updated();
+                }
+            }
+            else
+            {
+                m_listener->msgRemoved(epee::string_tools::pod_to_hex(chat), n, epee::string_tools::pod_to_hex(txid));
+                m_listener->updated();
             }
         }
     }
@@ -522,8 +579,9 @@ bool WalletImpl::create(const std::string &path, const std::string &password, co
     m_recoveringFromDevice = false;
     bool keys_file_exists;
     bool wallet_file_exists;
+    bool address_book_file_exists;
     bool message_file_exists;
-    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, message_file_exists);
+    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
     LOG_PRINT_L3("wallet_path: " << path << "");
     LOG_PRINT_L3("keys_file_exists: " << std::boolalpha << keys_file_exists << std::noboolalpha
                  << "  wallet_file_exists: " << std::boolalpha << wallet_file_exists << std::noboolalpha
@@ -563,8 +621,9 @@ bool WalletImpl::createWatchOnly(const std::string &path, const std::string &pas
 
     bool keys_file_exists;
     bool wallet_file_exists;
+    bool address_book_file_exists;
     bool message_file_exists;
-    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, message_file_exists);
+    tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
     LOG_PRINT_L3("wallet_path: " << path << "");
     LOG_PRINT_L3("keys_file_exists: " << std::boolalpha << keys_file_exists << std::noboolalpha
                  << "  wallet_file_exists: " << std::boolalpha << wallet_file_exists << std::noboolalpha
@@ -758,8 +817,9 @@ bool WalletImpl::open(const std::string &path, const std::string &password)
         // Check if wallet cache exists
         bool keys_file_exists;
         bool wallet_file_exists;
+        bool address_book_file_exists;
         bool message_file_exists;
-        tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, message_file_exists);
+        tools::wallet2::wallet_exists(path, keys_file_exists, wallet_file_exists, address_book_file_exists, message_file_exists);
         if(!wallet_file_exists){
             // Rebuilding wallet cache, using refresh height from .keys file
             m_rebuildWalletCache = true;

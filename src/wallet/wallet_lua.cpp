@@ -4,6 +4,7 @@
 #include "wallet_lua.h"
 #include "packjson.h"
 #include "lua-lldb.h"
+#include "wallet_lua_json.h"
 #include "zyre/zyre.hpp"
 #include "zyre.h"
 
@@ -120,8 +121,9 @@ namespace tools {
       void set_attribute(const std::string& name, const std::string& value);
       sol::variadic_results get_attribute(const std::string& name, sol::this_state L);
       cryptonote::account_public_address get_address();
-      sol::variadic_results get_address_book(sol::this_state L);
-      bool add_address_book_row(const tools::wallet2::address_book_row& row);
+      sol::variadic_results get_address_book_row(int idx, sol::this_state L);
+      int get_address_book_count();
+      sol::variadic_results add_address_book_row(const tools::wallet2::address_book_row& row, sol::this_state L);
       bool set_address_book_row(int row_id, const tools::wallet2::address_book_row& row);
       sol::variadic_results get_address_book_row_id(const cryptonote::account_public_address &address, sol::this_state L);
       bool is_address_book_row_multi_user(int row_id);
@@ -300,17 +302,44 @@ namespace tools {
       return wallet_->get_address();
     }
 
-    sol::variadic_results wallet2_interface::get_address_book(sol::this_state L)
+    /*sol::variadic_results wallet2_interface::get_address_book(sol::this_state L)
     {
       std::lock_guard<std::mutex> lock(wallet_mx_);
       sol::variadic_results rc;
       rc.push_back({ L, sol::in_place, sol::as_table(wallet_->get_address_book()) });
       return rc;
-    }
-    bool wallet2_interface::add_address_book_row(const wallet2::address_book_row& row)
+    }*/
+    sol::variadic_results wallet2_interface::get_address_book_row(int idx, sol::this_state L)
     {
       std::lock_guard<std::mutex> lock(wallet_mx_);
-      return wallet_->add_address_book_row(row);
+      sol::variadic_results rc;
+      wallet2::address_book_row row;
+      if(wallet_->get_address_book_row(idx, row))
+      {
+         rc.push_back({ L, sol::in_place, true });
+         rc.push_back({ L, sol::in_place, row });
+      }
+      else
+      {
+         rc.push_back({ L, sol::in_place, false });
+         rc.push_back({ L, sol::in_place, sol::lua_nil });
+      }
+      return rc;
+    }
+    int wallet2_interface::get_address_book_count()
+    {
+      std::lock_guard<std::mutex> lock(wallet_mx_);
+      return int(wallet_->get_address_book_count());
+    }
+    sol::variadic_results wallet2_interface::add_address_book_row(const wallet2::address_book_row& row, sol::this_state L)
+    {
+      std::lock_guard<std::mutex> lock(wallet_mx_);
+      size_t row_id;
+      bool ok = wallet_->add_address_book_row(row, row_id);
+      sol::variadic_results rc;
+      rc.push_back({ L, sol::in_place_type<bool>, ok });
+      rc.push_back({ L, sol::in_place_type<int>, int(row_id) });
+      return rc;
     }
     bool wallet2_interface::set_address_book_row(int row_id, const wallet2::address_book_row& row)
     {
@@ -319,13 +348,13 @@ namespace tools {
     }
     sol::variadic_results wallet2_interface::get_address_book_row_id(const cryptonote::account_public_address &address, sol::this_state L)
     {
-       std::lock_guard<std::mutex> lock(wallet_mx_); 
-       size_t row_id = 0;
-       bool ok = wallet_->get_address_book_row_id(address, row_id);
-       sol::variadic_results rc;
-       rc.push_back({ L, sol::in_place_type<bool>, ok });
-       rc.push_back({ L, sol::in_place_type<int>, int(row_id) });
-       return rc;
+      std::lock_guard<std::mutex> lock(wallet_mx_); 
+      size_t row_id = 0;
+      bool ok = wallet_->get_address_book_row_id(address, row_id);
+      sol::variadic_results rc;
+      rc.push_back({ L, sol::in_place_type<bool>, ok });
+      rc.push_back({ L, sol::in_place_type<int>, int(row_id) });
+      return rc;
     }
     bool wallet2_interface::is_address_book_row_multi_user(int row_id)
     {
@@ -1080,6 +1109,7 @@ namespace tools {
     auto crypto = lua.get<sol::table>("crypto");
     auto cryptonote = lua.get<sol::table>("cryptonote");
 
+    lua_json_reg(tools, lua);
     reg_config(cryptonote);
 
     auto int64_ctor0 = [](int a) { return I64{a}; };
@@ -1140,6 +1170,7 @@ namespace tools {
       "max", []() { return I64{std::numeric_limits<int64_t>::max()}; },
       "min", []() { return I64{std::numeric_limits<int64_t>::min()}; },
       "convert_to_u64", [](const I64& u) { return U64{uint64_t(u.v)}; },
+      "number", [](const I64& u) { return double(u.v); },
       "data", [](const I64& u) { return std::string((const char *)&u, (const char *)&u + sizeof(I64)); },
       "to_data", [](const I64& u) { return std::string((const char *)&u, (const char *)&u + sizeof(I64)); },
       "from_data", [&lua](const std::string& a) {
@@ -1217,6 +1248,7 @@ namespace tools {
       "max", []() { return U64{std::numeric_limits<uint64_t>::max()}; },
       "min", []() { return U64{std::numeric_limits<uint64_t>::min()}; },
       "convert_to_i64", [](const U64& u) { return I64{int64_t(u.v)}; },
+      "number", [](const U64& u) { return double(u.v); },
       "data", [](const U64& u) { return std::string((const char *)&u, (const char *)&u + sizeof(U64)); },
       "to_data", [](const U64& u) { return std::string((const char *)&u, (const char *)&u + sizeof(U64)); },
       "from_data", [&lua](const std::string& a) {
@@ -1786,8 +1818,8 @@ namespace tools {
       tools.new_usertype<wallet2::pending_tx>("pending_tx",
         "tx_key", &wallet2::pending_tx::tx_key,
         "tx", &wallet2::pending_tx::tx,
-        "dust", [](const wallet2::pending_tx& ptx) { return U64{ ptx.dust}; },
-        "fee", [](const wallet2::pending_tx& ptx) { return U64{ ptx.fee}; }
+        "dust", sol::readonly_property([](const wallet2::pending_tx& ptx) { return U64{ ptx.dust}; }),
+        "fee", sol::readonly_property([](const wallet2::pending_tx& ptx) { return U64{ ptx.fee}; })
       );
 
       tools.new_usertype<wallet2::transfer_details>("transfer_details",
@@ -1815,7 +1847,8 @@ namespace tools {
         "set_attribute",                  &wallet2_interface::set_attribute,
         "get_attribute",                  &wallet2_interface::get_attribute,
         "get_address",                    &wallet2_interface::get_address,
-        "get_address_book",               &wallet2_interface::get_address_book,
+        "get_address_book_row",           &wallet2_interface::get_address_book_row,
+        "get_address_book_count",         &wallet2_interface::get_address_book_count,
         "add_address_book_row",           &wallet2_interface::add_address_book_row,
         "set_address_book_row",           &wallet2_interface::set_address_book_row,
         "get_address_book_row_id",        &wallet2_interface::get_address_book_row_id,
