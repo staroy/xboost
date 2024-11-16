@@ -444,17 +444,18 @@ namespace cryptonote
   uint64_t get_transaction_weight(const transaction &tx, size_t blob_size)
   {
     CHECK_AND_ASSERT_MES(!tx.pruned, std::numeric_limits<uint64_t>::max(), "get_transaction_weight does not support pruned txes");
+    size_t message_size = tx.message.size() * (FEE_PER_KB_MESSAGE_MULTIPLIER > 1 ? FEE_PER_KB_MESSAGE_MULTIPLIER - 1 : 0);
     if (tx.version < 2)
-      return blob_size;
+      return blob_size + message_size;
     const rct::rctSig &rv = tx.rct_signatures;
     const bool bulletproof = rct::is_rct_bulletproof(rv.type);
     const bool bulletproof_plus = rct::is_rct_bulletproof_plus(rv.type);
     if (!bulletproof && !bulletproof_plus)
-      return blob_size;
+      return blob_size + message_size;
     const size_t n_padded_outputs = bulletproof_plus ? rct::n_bulletproof_plus_max_amounts(rv.p.bulletproofs_plus) : rct::n_bulletproof_max_amounts(rv.p.bulletproofs);
     uint64_t bp_clawback = get_transaction_weight_clawback(tx, n_padded_outputs);
     CHECK_AND_ASSERT_THROW_MES_L1(bp_clawback <= std::numeric_limits<uint64_t>::max() - blob_size, "Weight overflow");
-    return blob_size + bp_clawback;
+    return blob_size + bp_clawback + message_size;
   }
   //---------------------------------------------------------------
   uint64_t get_pruned_transaction_weight(const transaction &tx)

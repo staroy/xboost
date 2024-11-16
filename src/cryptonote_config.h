@@ -84,7 +84,7 @@ DEF( uint64_t, COIN,                                    ((uint64_t)1000000000000
 #define DYNAMIC_FEE_PER_KB_BASE_BLOCK_REWARD            ((uint64_t)10000000000000) // 10 * pow(10,12)
 #define DYNAMIC_FEE_PER_KB_BASE_FEE_V5                  ((uint64_t)2000000000 * (uint64_t)CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V2 / CRYPTONOTE_BLOCK_GRANTED_FULL_REWARD_ZONE_V5)
 #define DYNAMIC_FEE_REFERENCE_TRANSACTION_WEIGHT        ((uint64_t)3000)
-DEF( uint64_t, FEE_PER_KB_MESSAGE_MULTIPLIER,           5)
+DEF( uint64_t, FEE_PER_KB_MESSAGE_MULTIPLIER,           10)
 
 #define ORPHANED_BLOCKS_MAX_COUNT                       100
 
@@ -231,7 +231,7 @@ DEF( uint64_t,  CRYPTONOTE_PRUNING_TIP_BLOCKS,  5500) // the smaller, the more s
 DEF( uint64_t,  MAX_TX_EXTRA_SIZE,              2048 + 1060)
 DEF( uint64_t,  MAX_TX_EXTRA_MSG_SIZE,          256)
 DEF( uint64_t,  MAX_TX_MSG_PRUNABLE_SIZE,       8192)
-DEF( uint64_t,  MSG_TX_AMOUNT,                  1000)
+DEF( uint64_t,  MSG_TX_AMOUNT,                  1000000)
 
 #define MSG_TX_EXTRA_TYPE                       100
 #define MSG_TX_EXTRA_FREQ_0                     0
