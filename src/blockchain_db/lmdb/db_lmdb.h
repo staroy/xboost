@@ -59,6 +59,7 @@ typedef struct mdb_txn_cursors
   MDB_cursor *m_txc_txs_prunable;
   MDB_cursor *m_txc_txs_prunable_hash;
   MDB_cursor *m_txc_txs_prunable_tip;
+  MDB_cursor *m_txc_txs_message;
   MDB_cursor *m_txc_tx_indices;
   MDB_cursor *m_txc_tx_outputs;
 
@@ -84,6 +85,7 @@ typedef struct mdb_txn_cursors
 #define m_cur_txs_prunable	m_cursors->m_txc_txs_prunable
 #define m_cur_txs_prunable_hash	m_cursors->m_txc_txs_prunable_hash
 #define m_cur_txs_prunable_tip	m_cursors->m_txc_txs_prunable_tip
+#define m_cur_txs_message	m_cursors->m_txc_txs_message
 #define m_cur_tx_indices	m_cursors->m_txc_tx_indices
 #define m_cur_tx_outputs	m_cursors->m_txc_tx_outputs
 #define m_cur_spent_keys	m_cursors->m_txc_spent_keys
@@ -106,6 +108,7 @@ typedef struct mdb_rflags
   bool m_rf_txs_prunable;
   bool m_rf_txs_prunable_hash;
   bool m_rf_txs_prunable_tip;
+  bool m_rf_txs_message;
   bool m_rf_tx_indices;
   bool m_rf_tx_outputs;
   bool m_rf_spent_keys;
@@ -263,6 +266,7 @@ public:
   virtual bool get_blocks_from(uint64_t start_height, size_t min_block_count, size_t max_block_count, size_t max_tx_count, size_t max_size, std::vector<std::pair<std::pair<cryptonote::blobdata, crypto::hash>, std::vector<std::pair<crypto::hash, cryptonote::blobdata>>>>& blocks, bool pruned, bool skip_coinbase, bool get_miner_tx_hash) const;
   virtual bool get_prunable_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const;
   virtual bool get_prunable_tx_hash(const crypto::hash& tx_hash, crypto::hash &prunable_hash) const;
+  virtual bool get_message_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const;
 
   virtual uint64_t get_tx_count() const;
 
@@ -462,6 +466,7 @@ private:
   MDB_dbi m_txs_prunable;
   MDB_dbi m_txs_prunable_hash;
   MDB_dbi m_txs_prunable_tip;
+  MDB_dbi m_txs_message;
   MDB_dbi m_tx_indices;
   MDB_dbi m_tx_outputs;
 

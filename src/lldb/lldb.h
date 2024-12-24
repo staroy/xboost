@@ -24,6 +24,7 @@ namespace lldb {
      InVal(const crypto::hash& h) : data(h.data), size(crypto::HASH_SIZE) {}
      InVal(const char *d, size_t s) : data(d), size(s) {}
      InVal(const char *s) { data = s; size = strlen(s); }
+     InVal(const std::string& s) { data = s.data(); size = s.size(); }
      template<typename T>
      InVal(const T& s) : data((const char *)&s), size(sizeof(s)) {}
   };

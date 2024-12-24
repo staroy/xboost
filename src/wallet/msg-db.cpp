@@ -5,15 +5,29 @@
 #include "misc_log_ex.h"
 #include "misc_language.h"
 #include "wallet_errors.h"
-#include "msgdb.h"
+#include "msg-db.h"
 #include "cryptonote_config.h"
 #include "wallet2.h"
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "wallet.msgdb"
+#define MONERO_DEFAULT_LOG_CATEGORY "wallet.msg_db"
 
 namespace tools
 {
+
+  crypto::hash msg_db::to_salt_hash(const crypto::hash &chat)
+  {
+    crypto::hash hash[] = {chat, m_salt}, res;
+    crypto::tree_hash(hash, 2, res);
+    return res;
+  }
+
+  crypto::hash msg_db::address_to_hash(const cryptonote::account_public_address &chat)
+  {
+    crypto::hash res;
+    crypto::cn_fast_hash(&chat, sizeof(chat), res);
+    return res;
+  }
 
   struct message_cipher
   {
@@ -28,10 +42,11 @@ namespace tools
     END_SERIALIZE()
   };
 
-  msgdb::msgdb(const std::string& filename, wallet2 *wallet, uint64_t cache_limit)
+  msg_db::msg_db(const std::string& filename, wallet2 *wallet, uint64_t cache_limit)
     : m_db(filename)
     , m_data(m_db, "D")
     , m_idx(m_db, "I")
+    , m_tags(m_db, "F")
     , m_parent(m_db, "P")
     , m_last_reading(m_db, "R")
     , m_last_timestamp(m_db, "T")
@@ -41,7 +56,7 @@ namespace tools
     crypto::cn_fast_hash(m_wallet->get_account().get_keys().m_view_secret_key.data, sizeof(crypto::secret_key), m_salt);
   }
 
-  bool msgdb::add(const crypto::hash &txid, const message_data& in_data, uint64_t& n, const crypto::hash &parent)
+  bool msg_db::add(const crypto::hash &txid, const message_data& in_data, uint64_t& n, const crypto::hash &parent)
   {
     try
     {
@@ -50,6 +65,7 @@ namespace tools
         return false;
 
       message_data data(in_data);
+      crypto::hash salt_chat = to_salt_hash(data.chat);
 
       std::stringstream oss1;
       binary_archive<true> ar1(oss1);
@@ -71,8 +87,8 @@ namespace tools
       auto it = m_cache_idx.find(data.chat);
       if(it == m_cache_idx.end())
       {
-        auto& v_idx = m_cache_idx[ data.chat ];
-        lldb::DB S = m_idx.range(data.chat);
+        auto& v_idx = m_cache_idx[data.chat];
+        lldb::DB S = m_idx.range(salt_chat);
         lldb::OutVal key, val;
         for(bool rc = S.first(key, val); rc; rc = S.next(key, val))
           v_idx.push_back( val.get<crypto::hash>());
@@ -83,7 +99,7 @@ namespace tools
       auto it1 = m_idx_orders.find(data.chat);
       if(it1 == m_idx_orders.end())
       {
-        lldb::DB S = m_idx.range(data.chat);
+        lldb::DB S = m_idx.range(salt_chat);
         lldb::OutVal key, val;
         if(S.last(key, val))
           order = key.get<uint64_t>() + 1;
@@ -99,34 +115,41 @@ namespace tools
 
       m_data.put(txid, {oss2.str().data(), oss2.str().size()});
       lldb::OutVal key;
-      key += data.chat;
+      key += salt_chat;
       key += order;
       m_idx.put(key, txid);
 
       if(parent != crypto::null_hash)
       {
         lldb::OutVal out;
-        if(!m_parent.get(data.chat, out))
-          m_parent.put(data.chat, parent);
+        if(!m_parent.get(salt_chat, out))
+          m_parent.put(salt_chat, parent);
         m_cache_parent[data.chat] = parent;
+      }
+      else if(data.enable_comments)
+      {
+        lldb::OutVal key2;
+        key2 += to_salt_hash(txid);
+        key2 += uint64_t(0);
+        m_idx.put(key2, txid);
       }
 
       B.write();
 
       {
         lldb::OutVal last_timestamp;
-        if(m_last_timestamp.get(data.chat, last_timestamp))
+        if(m_last_timestamp.get(salt_chat, last_timestamp))
         {
           if(last_timestamp.get<uint64_t>() < data.timestamp)
-            m_last_timestamp.put(data.chat, data.timestamp);
+            m_last_timestamp.put(salt_chat, data.timestamp);
         }
         else
-          m_last_timestamp.put(data.chat, data.timestamp);
+          m_last_timestamp.put(salt_chat, data.timestamp);
       }
 
       if(it == m_cache_idx.end())
       {
-        auto& v_idx = m_cache_idx[ data.chat ];
+        auto& v_idx = m_cache_idx[data.chat];
         n = v_idx.size();
         v_idx.push_back(txid);
       }
@@ -147,13 +170,13 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
       return false;
     }
     return true;
   }
 
-  bool msgdb::set(const crypto::hash &txid, const message_data& in_data)
+  bool msg_db::set(const crypto::hash &txid, const message_data& in_data)
   {
     try
     {
@@ -183,13 +206,13 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
       return false;
     }
     return true;
   }
 
-  bool msgdb::set_timestamp(const crypto::hash &txid, uint64_t ts)
+  bool msg_db::set_timestamp(const crypto::hash &txid, uint64_t ts)
   {
     message_data data;
     if(get(txid, data) && data.timestamp != ts)
@@ -200,7 +223,7 @@ namespace tools
     return false;
   }
 
-  bool msgdb::set_height(const crypto::hash &txid, uint64_t height)
+  bool msg_db::set_height(const crypto::hash &txid, uint64_t height)
   {
     message_data data;
     if(get(txid, data) && data.height != height)
@@ -211,16 +234,17 @@ namespace tools
     return false;
   }
 
-  bool msgdb::get_txid(const crypto::hash &chat, uint64_t n, crypto::hash &txid)
+  bool msg_db::get_txid(const crypto::hash &chat, uint64_t n, crypto::hash &txid)
   {
     try
     {
+      crypto::hash salt_chat = to_salt_hash(chat);
       lldb::OutVal last_reading;
-      if(m_last_reading.get(chat, last_reading)) {
+      if(m_last_reading.get(salt_chat, last_reading)) {
         if(last_reading.get<uint64_t>() < n)
-          m_last_reading.put(chat, n);
+          m_last_reading.put(salt_chat, n);
       } else
-        m_last_reading.put(chat, n);
+        m_last_reading.put(salt_chat, n);
       std::lock_guard<std::mutex> lock(m_mutex_idx);
       auto it = m_cache_idx.find(chat);
       if(it != m_cache_idx.end())
@@ -233,7 +257,7 @@ namespace tools
       else
       {
         auto& v_idx = m_cache_idx[ chat ];
-        lldb::DB S = m_idx.range(chat);
+        lldb::DB S = m_idx.range(salt_chat);
         lldb::OutVal key, val;
         for(bool rc = S.first(key, val); rc; rc = S.next(key, val))
           v_idx.push_back( val.get<crypto::hash>() );
@@ -245,12 +269,12 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
     }
     return false;
   }
 
-  uint64_t msgdb::size(const crypto::hash &chat)
+  uint64_t msg_db::size(const crypto::hash &chat)
   {
     try
     {
@@ -258,8 +282,8 @@ namespace tools
       auto it = m_cache_idx.find(chat);
       if(it == m_cache_idx.end())
       {
-        auto& v_idx = m_cache_idx[ chat ];
-        lldb::DB S = m_idx.range(chat);
+        auto& v_idx = m_cache_idx[chat];
+        lldb::DB S = m_idx.range(to_salt_hash(chat));
         lldb::OutVal key, val;
         for(bool rc = S.first(key, val); rc; rc = S.next(key, val))
           v_idx.push_back( val.get<crypto::hash>() );
@@ -270,26 +294,27 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
     }
     return 0;
   }
 
-  uint64_t msgdb::unread(const crypto::hash &chat)
+  uint64_t msg_db::unread(const crypto::hash &chat)
   {
     try
     {
+      crypto::hash salt_chat = to_salt_hash(chat);
       uint64_t unread = 0;
       uint64_t last_reading = 0;
       lldb::OutVal out;
-      if(m_last_reading.get(chat, out))
+      if(m_last_reading.get(salt_chat, out))
           last_reading = out.get<uint64_t>();
       std::lock_guard<std::mutex> lock(m_mutex_idx);
       auto it = m_cache_idx.find(chat);
       if(it == m_cache_idx.end())
       {
         auto& v_idx = m_cache_idx[ chat ];
-        lldb::DB S = m_idx.range(chat);
+        lldb::DB S = m_idx.range(salt_chat);
         lldb::OutVal key, val;
         for(bool rc = S.first(key, val); rc; rc = S.next(key, val))
           v_idx.push_back( val.get<crypto::hash>() );
@@ -309,27 +334,27 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
     }
     return 0;
   }
 
-  uint64_t msgdb::last_timestamp(const crypto::hash &chat)
+  uint64_t msg_db::last_timestamp(const crypto::hash &chat)
   {
     try
     {
       lldb::OutVal last_timestamp;
-      if(m_last_timestamp.get(chat, last_timestamp))
+      if(m_last_timestamp.get(to_salt_hash(chat), last_timestamp))
         return last_timestamp.get<uint64_t>();
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
     }
     return 0;
   }
 
-  bool msgdb::has(const crypto::hash& txid)
+  bool msg_db::has(const crypto::hash& txid)
   {
     try
     {
@@ -346,12 +371,12 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
     }
     return false;
   }
 
-  bool msgdb::get(const crypto::hash& txid, message_data& data)
+  bool msg_db::get(const crypto::hash& txid, message_data& data)
   {
     try
     {
@@ -394,13 +419,13 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
       return false;
     }
     return true;
   }
 
-  bool msgdb::del(const crypto::hash& txid)
+  bool msg_db::del(const crypto::hash& txid)
   {
     try
     {
@@ -424,8 +449,10 @@ namespace tools
       THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar1, data),
         tools::error::wallet_internal_error, "Failed parse message data");
 
+      crypto::hash salt_chat = to_salt_hash(data.chat);
+
       uint64_t order = (uint64_t)-1;
-      lldb::DB S = m_idx.range(data.chat);
+      lldb::DB S = m_idx.range(salt_chat);
       lldb::OutVal key, val;
       for(bool rc = S.first(key, val); rc; rc = S.next(key, val))
         if(txid == val.get<crypto::hash>())
@@ -436,7 +463,7 @@ namespace tools
 
       m_data.del(txid);
       lldb::OutVal idx;
-      idx += data.chat;
+      idx += salt_chat;
       idx += order;
       m_idx.del(idx);
 
@@ -463,43 +490,268 @@ namespace tools
     }
     catch(const std::exception& e)
     {
-      MLOG_RED(el::Level::Warning, e.what());
+      MLOG_RED(el::Level::Error, e.what());
       return false;
     }
     return true;
   }
 
-  bool msgdb::get_parent(const crypto::hash &chat, crypto::hash &parent)
+  bool msg_db::get(const cryptonote::account_public_address &chat, uint64_t n, message_data& data)
   {
-    auto it = m_cache_parent.find(chat);
-    if(it != m_cache_parent.end())
+    return get(address_to_hash(chat), n, data);
+  }
+
+  bool msg_db::del(const cryptonote::account_public_address &chat, uint64_t n)
+  {
+    return del(address_to_hash(chat), n);
+  }
+
+  uint64_t msg_db::size(const cryptonote::account_public_address &chat)
+  {
+    return size(address_to_hash(chat));
+  }
+
+  uint64_t msg_db::unread(const cryptonote::account_public_address &chat)
+  {
+    return unread(address_to_hash(chat));
+  }
+
+  uint64_t msg_db::last_timestamp(const cryptonote::account_public_address &chat)
+  {
+    return last_timestamp(address_to_hash(chat));
+  }
+
+  bool msg_db::get_txid(const cryptonote::account_public_address &chat, uint64_t n, crypto::hash& txid)
+  {
+    return get_txid(address_to_hash(chat), n, txid);
+  }
+
+  bool msg_db::get(const crypto::hash &chat, uint64_t n, message_data& data)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return get(txid, data);
+  }
+
+  bool msg_db::del(const crypto::hash &chat, uint64_t n)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return del(txid);
+  }
+
+  void msg_db::set_tags(const crypto::hash &txid, const std::string& tags)
+  {
+    try
     {
-      parent = it->second;
-      return true;
+      m_tags.put(txid, tags);
     }
-    lldb::OutVal out;
-    if(m_parent.get(chat, out))
+    catch(const std::exception& e)
     {
-      parent = out.get<crypto::hash>();
-      m_cache_parent[chat] = parent;
-      return true;
+      MLOG_RED(el::Level::Error, e.what());
+    }
+  }
+
+  bool msg_db::get_tags(const crypto::hash &txid, std::string& tags)
+  {
+    try
+    {
+      lldb::OutVal v;
+      if(!m_tags.get(txid, v))
+        return false;
+      tags = v.data;
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
+      return false;
+    }
+    return true;
+  }
+
+  bool msg_db::add_tag(const crypto::hash &txid, const std::string& tag)
+  {
+    try
+    {
+      lldb::OutVal v;
+      m_tags.get(txid, v);
+      size_t n = v.data.find(tag);
+      if(n == std::string::npos)
+      {
+        v.data += tag;
+        m_tags.put(txid, v.data.c_str());
+        return true;
+      }
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
     }
     return false;
   }
 
-  crypto::hash msgdb::to_hash(const cryptonote::account_public_address &chat)
+  bool msg_db::del_tag(const crypto::hash &txid, const std::string& tag)
   {
-    crypto::hash hash[2], res;
-    crypto::cn_fast_hash(&chat, sizeof(chat), hash[0]);
-    hash[1] = m_salt;
-    crypto::tree_hash(hash, 2, res);
-    return res;
+    try
+    {
+      lldb::OutVal v;
+      if(!m_tags.get(txid, v))
+        return false;
+      size_t n = v.data.find(tag);
+      if(n != std::string::npos)
+      {
+        v.data.replace(n, tag.size(), "");
+        m_tags.put(txid, v.data.c_str());
+        return true;
+      }
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
+    }
+    return false;
   }
 
-  crypto::hash msgdb::to_hash(const crypto::hash &chat)
+  bool msg_db::add_tags(const crypto::hash &txid, const std::vector<std::string>& tags)
   {
-    crypto::hash hash[] = {chat, m_salt}, res;
-    crypto::tree_hash(hash, 2, res);
-    return res;
+    bool rc = false;
+    try
+    {
+      lldb::OutVal v;
+      m_tags.get(txid, v);
+      for(auto& tag : tags)
+      {
+        if(v.data.find(tag) == std::string::npos)
+        {
+          v.data += tag;
+          rc = true;
+        } 
+      }
+      if(rc)
+        m_tags.put(txid, v.data.c_str());
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
+      return false;
+    }
+    return rc;
+  }
+
+  bool msg_db::del_tags(const crypto::hash &txid, const std::vector<std::string>& tags)
+  {
+    bool rc = false;
+    try
+    {
+      lldb::OutVal v;
+      if(!m_tags.get(txid, v))
+        return false;
+      for(auto& tag : tags)
+      {
+        size_t n = v.data.find(tag);
+        if(n != std::string::npos)
+        {
+          v.data.replace(n, tag.size(), "");
+          rc = true;
+        }
+      }
+      if(rc)
+        m_tags.put(txid, v.data.c_str());
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
+      return false;
+    }
+    return rc;
+  }
+
+  bool msg_db::get_parent(const crypto::hash &chat, crypto::hash &parent)
+  {
+    try
+    {
+      crypto::hash salt_chat = to_salt_hash(chat);
+
+      auto it = m_cache_parent.find(chat);
+      if(it != m_cache_parent.end())
+      {
+        parent = it->second;
+        return true;
+      }
+
+      lldb::OutVal out;
+      if(m_parent.get(salt_chat, out))
+      {
+        parent = out.get<crypto::hash>();
+        m_cache_parent[chat] = parent;
+        return true;
+      }
+    }
+    catch(const std::exception& e)
+    {
+      MLOG_RED(el::Level::Error, e.what());
+    }
+    return false;
+  }
+
+  bool msg_db::get_parent(const cryptonote::account_public_address &chat, crypto::hash &parent)
+  {
+    return get_parent(address_to_hash(chat), parent);
+  }
+
+  bool msg_db::set_tags(const crypto::hash &chat, uint64_t n, const std::string& tags)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; set_tags(txid, tags); return true;
+  }
+
+  bool msg_db::get_tags(const crypto::hash &chat, uint64_t n, std::string& tags)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return get_tags(txid, tags);
+  }
+
+  bool msg_db::set_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tags)
+  {
+    return set_tags(address_to_hash(chat), n, tags);
+  }
+
+  bool msg_db::get_tags(const cryptonote::account_public_address &chat, uint64_t n, std::string& tags)
+  {
+    return get_tags(address_to_hash(chat), n, tags);
+  }
+
+  bool msg_db::add_tag(const crypto::hash &chat, uint64_t n, const std::string& tag)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; add_tag(txid, tag); return true;
+  }
+
+  bool msg_db::del_tag(const crypto::hash &chat, uint64_t n, const std::string& tag)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return del_tag(txid, tag);
+  }
+
+  bool msg_db::add_tag(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tag)
+  {
+    return add_tag(address_to_hash(chat), n, tag);
+  }
+
+  bool msg_db::del_tag(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tag)
+  {
+    return del_tag(address_to_hash(chat), n, tag);
+  }
+
+  bool msg_db::add_tags(const crypto::hash &chat, uint64_t n, const std::vector<std::string>& tag)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return add_tags(txid, tag);
+  }
+
+  bool msg_db::del_tags(const crypto::hash &chat, uint64_t n, const std::vector<std::string>& tag)
+  {
+    crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return del_tags(txid, tag);
+  }
+
+  bool msg_db::add_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::vector<std::string>& tags)
+  {
+    return add_tags(address_to_hash(chat), n, tags);
+  }
+
+  bool msg_db::del_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::vector<std::string>& tags)
+  {
+    return del_tags(address_to_hash(chat), n, tags);
   }
 }

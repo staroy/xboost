@@ -291,6 +291,7 @@ namespace cryptonote
 
     std::atomic<unsigned int> unprunable_size;
     std::atomic<unsigned int> prefix_size;
+    std::atomic<unsigned int> message_size;
 
     transaction();
     transaction(const transaction &t);
@@ -339,6 +340,11 @@ namespace cryptonote
         if (!signatures_not_expected && vin.size() != signatures.size())
           return false;
 
+        const auto start_message_pos = ar.getpos();
+        FIELDS(message);
+        if (std::is_same<Archive<W>, binary_archive<W>>())
+          message_size = ar.getpos() - start_message_pos;
+
         if (!pruned) for (size_t i = 0; i < vin.size(); ++i)
         {
           size_t signature_size = get_signature_size(vin[i]);
@@ -374,6 +380,11 @@ namespace cryptonote
           if (std::is_same<Archive<W>, binary_archive<W>>())
             unprunable_size = ar.getpos() - start_pos;
 
+          const auto start_message_pos = ar.getpos();
+          FIELDS(message);
+          if (std::is_same<Archive<W>, binary_archive<W>>())
+            message_size = ar.getpos() - start_message_pos;
+
           if (!pruned && rct_signatures.type != rct::RCTTypeNull)
           {
             ar.tag("rctsig_prunable");
@@ -386,10 +397,9 @@ namespace cryptonote
         }
       }
 
-      FIELDS(message);
-
       if (!typename Archive<W>::is_saving())
         pruned = false;
+
     END_SERIALIZE()
 
     template<bool W, template <bool> class Archive>
@@ -411,8 +421,45 @@ namespace cryptonote
           ar.end_object();
         }
       }
+
+      FIELDS(message);
+
       if (!typename Archive<W>::is_saving())
         pruned = true;
+
+      return ar.good();
+    }
+
+    template<bool W, template <bool> class Archive>
+    bool serialize_base_without_message(Archive<W> &ar)
+    {
+      FIELDS(*static_cast<transaction_prefix *>(this))
+
+      if (version == 1)
+      {
+      }
+      else
+      {
+        ar.tag("rct_signatures");
+        if (!vin.empty())
+        {
+          ar.begin_object();
+          bool r = rct_signatures.serialize_rctsig_base(ar, vin.size(), vout.size());
+          if (!r || !ar.good()) return false;
+          ar.end_object();
+        }
+      }
+
+      if (!typename Archive<W>::is_saving())
+        pruned = true;
+
+      return ar.good();
+    }
+
+    template<bool W, template <bool> class Archive>
+    bool serialize_message(Archive<W> &ar)
+    {
+      FIELDS(message);
       return ar.good();
     }
 
@@ -430,6 +477,7 @@ namespace cryptonote
     message(t.message),
     pruned(t.pruned),
     unprunable_size(t.unprunable_size.load()),
+    message_size(t.message_size.load()),
     prefix_size(t.prefix_size.load())
   {
     if (t.is_hash_valid())
@@ -476,6 +524,7 @@ namespace cryptonote
     }
     pruned = t.pruned;
     unprunable_size = t.unprunable_size.load();
+    message_size = t.message_size.load();
     prefix_size = t.prefix_size.load();
     return *this;
   }
@@ -502,6 +551,7 @@ namespace cryptonote
     set_blob_size_valid(false);
     pruned = false;
     unprunable_size = 0;
+    message_size = 0;
     prefix_size = 0;
   }
 

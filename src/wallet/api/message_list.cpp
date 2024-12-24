@@ -11,7 +11,16 @@ namespace Monero {
 
     MessageListImpl::~MessageListImpl() {}
 
-    bool MessageListImpl::send(const std::string& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const std::string& parent)
+    bool MessageListImpl::send(const std::string& chat,
+                               const std::string& text,
+                               const std::string& description,
+                               const std::string& short_name,
+                               bool enable_comments,
+                               bool is_anon,
+                               uint64_t amount,
+                               bool unprunable,
+                               uint64_t& n,
+                               const std::string& parent)
     {
         crypto::hash parent_hash = crypto::null_hash;
         if(!parent.empty())
@@ -33,7 +42,7 @@ namespace Monero {
         cryptonote::address_parse_info info;
         if(cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
         {
-            return m_wallet->m_wallet->add_message_to_chat(info.address, text, enable_comments, amount, unprunable, n, parent_hash);
+            return m_wallet->m_wallet->add_message_to_chat(info.address, text, description, short_name, enable_comments, is_anon, amount, unprunable, n, parent_hash);
         }
 
         crypto::hash chat_hash;
@@ -43,10 +52,19 @@ namespace Monero {
             m_errorCode = Invalid_Address;
             return false;
         }
-        return m_wallet->m_wallet->add_message_to_chat(chat_hash, text, enable_comments, amount, unprunable, n, parent_hash);
+        return m_wallet->m_wallet->add_message_to_chat(chat_hash, text, description, short_name, enable_comments, is_anon, amount, unprunable, n, parent_hash);
     }
 
-    bool MessageListImpl::put(uint64_t& n, const std::string& chat, const std::string& text, bool enable_comments, const std::string& txid, uint64_t height, uint64_t timestamp, const std::string& parent)
+    bool MessageListImpl::put(uint64_t& n,
+                              const std::string& chat,
+                              const std::string& text,
+                              const std::string& description,
+                              const std::string& short_name,
+                              bool enable_comments,
+                              const std::string& txid,
+                              uint64_t height,
+                              uint64_t timestamp,
+                              const std::string& parent)
     {
         crypto::hash parent_hash = crypto::null_hash;
         if(!parent.empty())
@@ -76,7 +94,7 @@ namespace Monero {
         cryptonote::address_parse_info info;
         if(cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
         {
-            return m_wallet->m_wallet->db_message_chat_add(n, info.address, m_wallet->m_wallet->get_address(), text, enable_comments, txid_hash, height, timestamp, parent_hash);
+            return m_wallet->m_wallet->db_message_chat_add(n, info.address, m_wallet->m_wallet->get_address(), text, description, short_name, enable_comments, txid_hash, height, timestamp, parent_hash);
         }
 
         crypto::hash chat_hash;
@@ -91,17 +109,21 @@ namespace Monero {
         cryptonote::account_public_address addr = m_wallet->m_wallet->get_address();
         crypto::cn_fast_hash(&addr, sizeof(addr), addr_hash);
 
-        return m_wallet->m_wallet->db_message_chat_add(n, chat_hash, addr_hash, text, enable_comments, txid_hash, height, timestamp, parent_hash);
+        return m_wallet->m_wallet->db_message_chat_add(n, chat_hash, addr_hash, text, description, short_name, enable_comments, txid_hash, height, timestamp, parent_hash);
     }
 
     bool MessageListImpl::get(const std::string& chat,
                               uint64_t n,
                               std::string& sender,
+                              uint64_t& sender_rowid,
                               std::string& text,
+                              std::string& description,
+                              std::string& short_name,
                               bool& enable_comments,
                               uint64_t& height,
                               uint64_t& ts,
-                              std::string& txid)
+                              std::string& txid,
+                              std::string& tags)
     {
         crypto::hash chat_hash;  cryptonote::address_parse_info info;
         if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
@@ -124,8 +146,21 @@ namespace Monero {
             return false;
         }
 
-        sender = cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), false, m.m_sender);
+        m_wallet->m_wallet->get_message_chat_tags(chat_hash, n, tags);
+
+        if(m.m_sender.m_spend_public_key != crypto::null_pkey && m.m_sender.m_view_public_key != crypto::null_pkey)
+        {
+          m_wallet->m_wallet->get_address_book_row_id(m.m_sender, sender_rowid);
+          sender = cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), false, m.m_sender);
+        }
+        else
+        {
+          sender_rowid = (uint64_t)-1;
+          sender = epee::string_tools::pod_to_hex(m.m_sender_hash);
+        }
         text = m.m_text;
+        description = m.m_description;
+        short_name = m.m_short_name;
         enable_comments = m.m_enable_comments;
         height = m.m_height;
         ts = m.m_timestamp;
@@ -136,10 +171,14 @@ namespace Monero {
 
     bool MessageListImpl::get(const std::string& txid,
                               std::string& sender,
+                              uint64_t& sender_rowid,
                               std::string& text,
+                              std::string& description,
+                              std::string& short_name,
                               bool& enable_comments,
                               uint64_t& height,
-                              uint64_t& ts)
+                              uint64_t& ts,
+                              std::string& tags)
     {
         crypto::hash txid_hash;
         if(!epee::string_tools::hex_to_pod(txid, txid_hash))
@@ -157,12 +196,232 @@ namespace Monero {
             return false;
         }
 
-        sender = cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), false, m.m_sender);
+        m_wallet->m_wallet->get_message_chat_tags(txid_hash, tags);
+
+        if(m.m_sender.m_spend_public_key != crypto::null_pkey && m.m_sender.m_view_public_key != crypto::null_pkey)
+        {
+          m_wallet->m_wallet->get_address_book_row_id(m.m_sender, sender_rowid);
+          sender = cryptonote::get_account_address_as_str(m_wallet->m_wallet->nettype(), false, m.m_sender);
+        }
+        else
+        {
+          sender_rowid = (uint64_t)-1;
+          sender = epee::string_tools::pod_to_hex(m.m_sender_hash);
+        }
         text = m.m_text;
+        description = m.m_description;
+        short_name = m.m_short_name;
         enable_comments = m.m_enable_comments;
         height = m.m_height;
         ts = m.m_timestamp;
 
+        return true;
+    }
+
+    bool MessageListImpl::del(const std::string& chat, uint64_t n)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid parent hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        return m_wallet->m_wallet->del_message_chat_row(chat_hash, n);
+    }
+
+    bool MessageListImpl::undel(const std::string& chat, uint64_t n)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid parent hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        return m_wallet->m_wallet->undel_message_chat_row(chat_hash, n);
+    }
+
+    bool MessageListImpl::setTags(const std::string& chat, uint64_t n, const std::string& tags)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid chat hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        m_wallet->m_wallet->set_message_chat_tags(chat_hash, n, tags);
+
+        return true;
+    }
+
+    bool MessageListImpl::getTags(const std::string& chat, uint64_t n, std::string& tags)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid chat hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        tools::wallet2::message_list_row m;
+        if(!m_wallet->m_wallet->get_message_chat_tags(chat_hash, n, tags))
+        {
+            m_errorString = tr("Error get message chat tags");
+            m_errorCode = General_Error;
+            return false;
+        }
+        return true;
+    }
+
+    bool MessageListImpl::setTags(const std::string& txid, const std::string& tags)
+    {
+        crypto::hash txid_hash;
+        if(!epee::string_tools::hex_to_pod(txid, txid_hash))
+        {
+            m_errorString = tr("Invalid txid hex data");
+            m_errorCode = Invalid_Address;
+            return false;
+        }
+
+        tools::wallet2::message_list_row m;
+        m_wallet->m_wallet->set_message_chat_tags(txid_hash, tags);
+
+        return true;
+    }
+
+    bool MessageListImpl::getTags(const std::string& txid, std::string& tags)
+    {
+        crypto::hash txid_hash;
+        if(!epee::string_tools::hex_to_pod(txid, txid_hash))
+        {
+            m_errorString = tr("Invalid txid hex data");
+            m_errorCode = Invalid_Address;
+            return false;
+        }
+
+        tools::wallet2::message_list_row m;
+        if(!m_wallet->m_wallet->get_message_chat_tags(txid_hash, tags))
+        {
+            m_errorString = tr("Error set message chat tags");
+            m_errorCode = General_Error;
+            return false;
+        }
+        return true;
+    }
+
+    bool MessageListImpl::addTag(const std::string& chat, uint64_t n, const std::string& tag)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid chat hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        if(!m_wallet->m_wallet->add_message_chat_tag(chat_hash, n, tag))
+        {
+            m_errorString = tr("Error add message chat tag");
+            m_errorCode = General_Error;
+            return false;
+        }
+        return true;
+    }
+
+    bool MessageListImpl::delTag(const std::string& chat, uint64_t n, const std::string& tag)
+    {
+        crypto::hash chat_hash;  cryptonote::address_parse_info info;
+        if(!cryptonote::get_account_address_from_str(info, m_wallet->m_wallet->nettype(), chat))
+        {
+            if(!epee::string_tools::hex_to_pod(chat, chat_hash))
+            {
+                m_errorString = tr("Invalid chat hex data");
+                m_errorCode = Invalid_Address;
+                return false;
+            }
+        }
+        else
+            crypto::cn_fast_hash(&info.address, sizeof(info.address), chat_hash);
+
+        tools::wallet2::message_list_row m;
+        if(!m_wallet->m_wallet->del_message_chat_tag(chat_hash, n, tag))
+        {
+            m_errorString = tr("Error get message chat tags");
+            m_errorCode = General_Error;
+            return false;
+        }
+        return true;
+    }
+
+    bool MessageListImpl::addTag(const std::string& txid, const std::string& tag)
+    {
+        crypto::hash txid_hash;
+        if(!epee::string_tools::hex_to_pod(txid, txid_hash))
+        {
+            m_errorString = tr("Invalid txid hex data");
+            m_errorCode = Invalid_Address;
+            return false;
+        }
+
+        tools::wallet2::message_list_row m;
+        if(!m_wallet->m_wallet->add_message_chat_tag(txid_hash, tag))
+        {
+            m_errorString = tr("Error add message chat tag");
+            m_errorCode = General_Error;
+            return false;
+        }
+        return true;
+
+    }
+
+    bool MessageListImpl::delTag(const std::string& txid, const std::string& tag)
+    {
+        crypto::hash txid_hash;
+        if(!epee::string_tools::hex_to_pod(txid, txid_hash))
+        {
+            m_errorString = tr("Invalid txid hex data");
+            m_errorCode = Invalid_Address;
+            return false;
+        }
+
+        tools::wallet2::message_list_row m;
+        if(!m_wallet->m_wallet->del_message_chat_tag(txid_hash, tag))
+        {
+            m_errorString = tr("Error del message chat tag");
+            m_errorCode = General_Error;
+            return false;
+        }
         return true;
     }
 

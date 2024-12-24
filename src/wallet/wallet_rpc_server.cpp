@@ -2948,7 +2948,7 @@ namespace tools
   {
     if (!m_wallet) return not_open(er);
     std::string error;
-    if (!m_wallet->parse_uri(req.uri, res.uri.address, res.uri.payment_id, res.uri.amount, res.uri.tx_description, res.uri.recipient_name, res.unknown_parameters, error))
+    if (!m_wallet->parse_uri(req.uri, res.uri.address, res.uri.has_view_skey, res.uri.payment_id, res.uri.amount, res.uri.tx_description, res.uri.recipient_name, res.unknown_parameters, error))
     {
       er.code = WALLET_RPC_ERROR_CODE_WRONG_URI;
       er.message = "Error parsing URI: " + error;
@@ -3034,6 +3034,7 @@ namespace tools
     size_t row_id;
     if (!m_wallet->add_address_book_row({
                                         info.address,
+                                        crypto::null_hash,
                                         info.has_payment_id ? info.payment_id : crypto::null_hash8,
                                         req.description,
                                         info.is_subaddress,

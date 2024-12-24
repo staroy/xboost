@@ -1372,6 +1372,21 @@ public:
   virtual bool get_prunable_tx_hash(const crypto::hash& tx_hash, crypto::hash &prunable_hash) const = 0;
 
   /**
+   * @brief fetches the message transaction blob with the given hash
+   *
+   * The subclass should return the message transaction stored which has the given
+   * hash.
+   *
+   * If the transaction does not exist, or if we do not have that message data,
+   * the subclass should return false.
+   *
+   * @param h the hash to look for
+   *
+   * @return true iff the transaction was found and we have its prunable data
+   */
+  virtual bool get_message_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const = 0;
+
+  /**
    * @brief fetches the total number of transactions ever
    *
    * The subclass should return a count of all the transactions from

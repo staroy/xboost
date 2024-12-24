@@ -14,7 +14,7 @@ namespace tools
 {
   class wallet2;
 
-  class msgdb
+  class msg_db
   {
   public:
     struct message_data
@@ -24,6 +24,8 @@ namespace tools
       uint64_t height; // message height
       uint64_t timestamp; // message timestamp
       std::string data; // text and other
+      std::string description; // description
+      std::string short_name; // short name
       bool enable_comments;
 
       BEGIN_SERIALIZE_OBJECT()
@@ -33,11 +35,13 @@ namespace tools
         FIELD(height)
         FIELD(timestamp)
         FIELD(data)
+        FIELD(description)
+        FIELD(short_name)
         FIELD(enable_comments)
       END_SERIALIZE()
     };
 
-    msgdb(const std::string& filename, wallet2 *wallet, uint64_t cache_limit = 100);
+    msg_db(const std::string& filename, wallet2 *wallet, uint64_t cache_limit = 100);
 
     /*
       add message to database,
@@ -68,7 +72,6 @@ namespace tools
     /*
       get message of chat from database,
       return true if success,
-      pass chat hash, n is order position in chat
       assign rvalue message data
     */
     bool get(const crypto::hash &txid, message_data& data);
@@ -85,6 +88,47 @@ namespace tools
       return true if message with txid in database exists
     */
     bool has(const crypto::hash& txid);
+
+
+
+    /*
+      set changed tags to database,
+      return true if success,
+    */
+    void set_tags(const crypto::hash &txid, const std::string& tags);
+
+    /*
+      get tags of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool get_tags(const crypto::hash &txid, std::string& tags);
+
+    /*
+      add tag to database,
+      return true if success,
+    */
+    bool add_tag(const crypto::hash &txid, const std::string& tag);
+
+    /*
+      del tag of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tag(const crypto::hash &txid, const std::string& tag);
+
+    /*
+      add tag to database,
+      return true if success,
+    */
+    bool add_tags(const crypto::hash &txid, const std::vector<std::string>& tags);
+
+    /*
+      del tag of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tags(const crypto::hash &txid, const std::vector<std::string>& tags);
 
     /*
       return count messages in chat
@@ -118,47 +162,33 @@ namespace tools
       pass chat address, n is order position in chat
       assign rvalue message data
     */
-    bool get(const cryptonote::account_public_address &chat, uint64_t n, message_data& data)
-    {
-      return get(to_hash(chat), n, data);
-    }
+    bool get(const cryptonote::account_public_address &chat, uint64_t n, message_data& data);
 
     /*
       delete message of chat from database,
       return true if success,
       pass chat address, n is order position in chat
     */
-    bool del(const cryptonote::account_public_address &chat, uint64_t n)
-    {
-      crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return del(txid);
-    }
+    bool del(const cryptonote::account_public_address &chat, uint64_t n);
 
     /*
       return count messages in chat
       pass chat address
     */
-    uint64_t size(const cryptonote::account_public_address &chat)
-    {
-      return size(to_hash(chat));
-    }
+    uint64_t size(const cryptonote::account_public_address &chat);
 
     /*
       return unread count messages in chat
       pass chat address
     */
-    uint64_t unread(const cryptonote::account_public_address &chat)
-    {
-      return unread(to_hash(chat));
-    }
+ 
+    uint64_t unread(const cryptonote::account_public_address &chat);
 
     /*
       return last time messages in chat
       pass chat address
     */
-    uint64_t last_timestamp(const cryptonote::account_public_address &chat)
-    {
-      return last_timestamp(to_hash(chat));
-    }
+    uint64_t last_timestamp(const cryptonote::account_public_address &chat);
 
     /*
       get message id in database,
@@ -166,10 +196,7 @@ namespace tools
       pass chat address, n is order position in chat
       assign rvalue id of message
     */
-    bool get_txid(const cryptonote::account_public_address &chat, uint64_t n, crypto::hash& txid)
-    {
-      return get_txid(to_hash(chat), n, txid);
-    }
+    bool get_txid(const cryptonote::account_public_address &chat, uint64_t n, crypto::hash& txid);
 
     /*
       get message of chat from database,
@@ -177,20 +204,14 @@ namespace tools
       pass chat hash, n is order position in chat
       assign rvalue message data
     */
-    bool get(const crypto::hash &chat, uint64_t n, message_data& data)
-    {
-      crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return get(txid, data);
-    }
+    bool get(const crypto::hash &chat, uint64_t n, message_data& data);
 
     /*
       delete message of chat from database,
       return true if success,
       pass chat hash, n is order position in chat
     */
-    bool del(const crypto::hash &chat, uint64_t n)
-    {
-      crypto::hash txid; if(!get_txid(chat, n, txid)) return false; return del(txid);
-    }
+    bool del(const crypto::hash &chat, uint64_t n);
 
     /*
       get parent chat of chat
@@ -201,19 +222,100 @@ namespace tools
     bool get_parent(const crypto::hash &chat, crypto::hash &parent);
 
     /*
-      make hash with internal salt from address
+      get parent chat of chat
+      return true if success,
+      pass chat hash
+      assign rvalue parent
     */
-    crypto::hash to_hash(const cryptonote::account_public_address &chat);
+    bool get_parent(const cryptonote::account_public_address &chat, crypto::hash &parent);
 
     /*
-      chat hash with internal salt
+      set changed tags to database,
+      return true if success,
     */
-    crypto::hash to_hash(const crypto::hash &chat);
+    bool set_tags(const crypto::hash &chat, uint64_t n, const std::string& tags);
+
+    /*
+      get tags of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool get_tags(const crypto::hash &chat, uint64_t n, std::string& tags);
+
+    /*
+      add tags to database,
+      return true if success,
+    */
+    bool add_tag(const crypto::hash &chat, uint64_t n, const std::string& tag);
+
+    /*
+      get tags of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tag(const crypto::hash &chat, uint64_t n, const std::string& tag);
+
+    /*
+      set changed tags to database,
+      return true if success,
+    */
+    bool set_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tags);
+
+    /*
+      get tags of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool get_tags(const cryptonote::account_public_address &chat, uint64_t n, std::string& tags);
+
+    /*
+      add tag to database,
+      return true if success,
+    */
+    bool add_tag(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tag);
+
+    /*
+      del tag of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tag(const cryptonote::account_public_address &chat, uint64_t n, const std::string& tags);
+
+    /*
+      add tags to database,
+      return true if success,
+    */
+    bool add_tags(const crypto::hash &chat, uint64_t n, const std::vector<std::string>& tags);
+
+    /*
+      del tag of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tags(const crypto::hash &chat, uint64_t n, const std::vector<std::string>& tags);
+
+    /*
+      adds tag to database,
+      return true if success,
+    */
+    bool add_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::vector<std::string>& tags);
+
+    /*
+      del tags of chat from database,
+      return true if success,
+      assign rvalue message tags
+    */
+    bool del_tags(const cryptonote::account_public_address &chat, uint64_t n, const std::vector<std::string>& tags);
 
   private:
+
+    crypto::hash to_salt_hash(const crypto::hash &chat);
+    crypto::hash address_to_hash(const cryptonote::account_public_address &chat);
+
     lldb::DB                                                       m_db,
                                                                    m_data,
                                                                    m_idx,
+                                                                   m_tags,
                                                                    m_parent,
                                                                    m_last_reading,
                                                                    m_last_timestamp;

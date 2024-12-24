@@ -35,6 +35,7 @@
 #include <vector>
 #include <list>
 #include <set>
+#include <unordered_set>
 #include <ctime>
 #include <iostream>
 #include <stdexcept>
@@ -44,11 +45,15 @@
 //  Public interface for libwallet library
 namespace Monero {
 
-enum NetworkType : uint8_t {
-    MAINNET = 0,
-    TESTNET,
-    STAGENET
-};
+    extern const char *TAG_DEL;
+    extern const char *TAG_BLOCK;
+    extern const char *TAG_ANON;
+
+    enum NetworkType : uint8_t {
+        MAINNET = 0,
+        TESTNET,
+        STAGENET
+    };
 
     namespace Utils {
         bool isAddressLocal(const std::string &hostaddr);
@@ -220,35 +225,41 @@ struct TransactionHistory
  */
 struct AddressBookRow {
 public:
-    AddressBookRow(const std::string &_address, const std::string &_paymentId, const std::string &_description, const std::string &_ab, const std::string &_abColor, const std::string &_abBackground, bool _isMultiUser = false, bool _hasSpendKey = false):
+    AddressBookRow(const std::string &_address, const std::string &_paymentId, const std::string &_description, const std::string &_shortName, const std::string &_shortNameColor, const std::string &_shortNameBackground, bool _isMultiUser = false, bool _hasSpendKey = false, const std::string &_myDescription = std::string(), const std::string &_myShortName = std::string()) :
         m_address(_address),
         m_paymentId(_paymentId), 
         m_description(_description),
-        m_ab(_ab),
-        m_abColor(_abColor),
-        m_abBackground(_abBackground),
+        m_shortName(_shortName),
+        m_shortNameColor(_shortNameColor),
+        m_shortNameBackground(_shortNameBackground),
         m_isMultiUser(_isMultiUser),
-        m_hasSpendKey(_hasSpendKey) {}
+        m_hasSpendKey(_hasSpendKey),
+        m_myDescription(_myDescription),
+        m_myShortName(_myShortName) {}
  
 private:
     std::string m_address;
     std::string m_paymentId;
     std::string m_description;
-    std::string m_ab;
-    std::string m_abColor;
-    std::string m_abBackground;
+    std::string m_shortName;
+    std::string m_shortNameColor;
+    std::string m_shortNameBackground;
     bool m_isMultiUser;
     bool m_hasSpendKey;
+    std::string m_myDescription;
+    std::string m_myShortName;
 public:
     std::string extra;
     std::string getAddress() const {return m_address;} 
     std::string getDescription() const {return m_description;} 
     std::string getPaymentId() const {return m_paymentId;} 
-    std::string getAb() const {return m_ab;}
-    std::string getAbColor() const {return m_abColor;}
-    std::string getAbBackground() const {return m_abBackground;}
+    std::string getShortName() const {return m_shortName;}
+    std::string getShortNameColor() const {return m_shortNameColor;}
+    std::string getShortNameBackground() const {return m_shortNameBackground;}
     bool isMultiUser() const {return m_isMultiUser;}
     bool hasSpendKey() const {return m_hasSpendKey;}
+    std::string getMyDescription() const {return m_myDescription;} 
+    std::string getMyShortName() const {return m_myShortName;}
 };
 
 /**
@@ -264,13 +275,28 @@ struct AddressBook
         Invalid_Payment_Id
     };
     virtual ~AddressBook() = 0;
-    virtual bool newMultiUserRow(const std::string& description, std::function<void(AddressBookRow& row, std::size_t rowId)> callback) = 0;
+    virtual bool newMultiUserRow(const std::string& description, const std::string& shortName, const std::string& shortNameBackground, std::function<void(AddressBookRow& row, std::size_t rowId)> callback) = 0;
     virtual bool addRow(const AddressBookRow& row, std::size_t& rowId) = 0;
     virtual bool getRow(std::size_t rowId, std::function<void(AddressBookRow& row)> callback) = 0;
     virtual bool deleteRow(std::size_t rowId) = 0;
+    virtual bool undeleteRow(std::size_t rowId) = 0;
+    virtual bool blockRow(std::size_t rowId) = 0;
+    virtual bool unblockRow(std::size_t rowId) = 0;
     virtual bool setDescription(std::size_t index, const std::string &description) = 0;
+    virtual bool setFields(int index, const std::string &address, const std::string &description, const std::string &shortName, const std::string &shortNameBackground) = 0;
     virtual bool isMultiUser(std::size_t index) = 0;
+    virtual void setTags(std::size_t row_id, const std::string& tags) = 0;
+    virtual bool getTags(std::size_t row_id, std::string& tags) const = 0;
+    virtual bool addTag(std::size_t row_id, const std::string& tag) = 0;
+    virtual bool delTag(std::size_t row_id, const std::string& tag) = 0;
+    virtual bool isTaged(std::size_t row_id, const std::string& tag) = 0;
+
+    virtual void addAttr(std::size_t row_id, const std::string& name, const std::string& val) = 0;
+    virtual bool getAttr(std::size_t row_id, const std::string& name, std::string& val) const = 0;
+    virtual bool delAttr(std::size_t row_id, const std::string& name) = 0;
+
     virtual size_t count() const = 0;
+    virtual void getShortNameBackgroundColorRandomize(std::string& bc) = 0;
     virtual std::string errorString() const = 0;
     virtual int errorCode() const = 0;
     virtual int lookupPaymentID(const std::string &payment_id) const = 0;
@@ -286,22 +312,60 @@ struct MessageList
     };
     virtual ~MessageList() = 0;
 
-    virtual bool send(const std::string& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const std::string& parent = std::string()) = 0;
-    virtual bool put(uint64_t& n, const std::string& chat, const std::string& text, bool enable_comments, const std::string& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const std::string& parent = std::string()) = 0;
+    virtual bool send(const std::string& chat,
+                     const std::string& text,
+                     const std::string& description,
+                     const std::string& short_name,
+                     bool enable_comments,
+                     bool is_anon,
+                     uint64_t amount,
+                     bool unprunable,
+                     uint64_t& n,
+                     const std::string& parent = std::string()) = 0;
+    virtual bool put(uint64_t& n,
+                     const std::string& chat,
+                     const std::string& text,
+                     const std::string& description,
+                     const std::string& short_name,
+                     bool enable_comments,
+                     const std::string& txid,
+                     uint64_t height = 0,
+                     uint64_t timestamp = time(NULL),
+                     const std::string& parent = std::string()) = 0;
     virtual bool get(const std::string& chat,
                      uint64_t n,
                      std::string& sender,
+                     uint64_t& sender_row,
                      std::string& text,
+                     std::string& description,
+                     std::string& short_name,
                      bool& enable_comments,
                      uint64_t& height,
                      uint64_t& ts,
-                     std::string& txid) = 0;
+                     std::string& txid,
+                     std::string& tags) = 0;
     virtual bool get(const std::string& txid,
                      std::string& sender,
+                     uint64_t& sender_row,
                      std::string& text,
+                     std::string& description,
+                     std::string& short_name,
                      bool& enable_comments,
                      uint64_t& height,
-                     uint64_t& ts) = 0;
+                     uint64_t& ts,
+                     std::string& tags) = 0;
+    virtual bool del(const std::string& chat, uint64_t n) = 0;
+    virtual bool undel(const std::string& chat, uint64_t n) = 0;
+
+    virtual bool setTags(const std::string& chat, uint64_t n, const std::string& tags) = 0;
+    virtual bool getTags(const std::string& chat, uint64_t n, std::string& tags) = 0;
+    virtual bool setTags(const std::string& txid, const std::string& tags) = 0;
+    virtual bool getTags(const std::string& txid, std::string& tags) = 0;
+    virtual bool addTag(const std::string& chat, uint64_t n, const std::string& tag) = 0;
+    virtual bool delTag(const std::string& chat, uint64_t n, const std::string& tag) = 0;
+    virtual bool addTag(const std::string& txid, const std::string& tag) = 0;
+    virtual bool delTag(const std::string& txid, const std::string& tag) = 0;
+
     virtual bool getParent(const std::string& chat, std::string& parent) = 0;
     virtual uint64_t getCnt(const std::string& chat) = 0;
     virtual uint64_t getUnread(const std::string& chat) = 0;
@@ -1140,8 +1204,10 @@ struct Wallet
      */
     virtual bool verifyMessageWithPublicKey(const std::string &message, const std::string &publicKey, const std::string &signature) const = 0;
 
-    virtual bool parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error) = 0;
+    virtual bool parse_uri(const std::string &uri, std::string &address, bool& has_view_skey, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error) = 0;
     virtual std::string make_uri(const std::string &address, const std::string &payment_id, uint64_t amount, const std::string &tx_description, const std::string &recipient_name, std::string &error) const = 0;
+
+    virtual bool isMultiUserAddress(const std::string &address) const = 0;
 
     virtual std::string getDefaultDataDir() const = 0;
    

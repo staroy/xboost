@@ -39,6 +39,7 @@
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/blobdatatype.h"
+#include "serialization/binary_utils.h"
 #include "ringct/rctSigs.h"
 #include "version.h"
 
@@ -184,9 +185,12 @@ namespace rpc
         bwt.transactions.emplace_back();
         bwt.transactions.back().pruned = req.prune;
 
-        const bool parsed = req.prune ?
-          parse_and_validate_tx_base_from_blob(blob.second, bwt.transactions.back()) :
-          parse_and_validate_tx_from_blob(blob.second, bwt.transactions.back());
+        bool parsed = false;
+        if(req.prune)
+          parsed = parse_and_validate_tx_base_from_blob(blob.second, bwt.transactions.back());
+        else
+          parsed = parse_and_validate_tx_from_blob(blob.second, bwt.transactions.back());
+
         if (!parsed)
         {
           res.blocks.clear();

@@ -6789,8 +6789,8 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
     // check for a URI
     std::string address_uri, payment_id_uri, tx_description, recipient_name, error;
     std::vector<std::string> unknown_parameters;
-    uint64_t amount = 0;
-    bool has_uri = m_wallet->parse_uri(local_args[i], address_uri, payment_id_uri, amount, tx_description, recipient_name, unknown_parameters, error);
+    uint64_t amount = 0; bool has_view_skey = false;
+    bool has_uri = m_wallet->parse_uri(local_args[i], address_uri, has_view_skey, payment_id_uri, amount, tx_description, recipient_name, unknown_parameters, error);
     if (has_uri)
     {
       r = cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), address_uri, oa_prompter);
@@ -10064,6 +10064,7 @@ bool simple_wallet::address_book(const std::vector<std::string> &args/* = std::v
     size_t row_id;
     m_wallet->add_address_book_row({
                                        info.address,
+                                       crypto::null_hash,
                                        info.has_payment_id ? info.payment_id : crypto::null_hash8,
                                        description,
                                        info.is_subaddress,

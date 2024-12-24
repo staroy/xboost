@@ -1726,7 +1726,7 @@ PendingTransaction *WalletImpl::createTransactionMultDest(const std::vector<stri
         if(message.size() > 0)
         {
             tools::wallet2::message_data msg;
-            msg.m_text = message;
+            msg.m_data = message;
 
             auto self_address = m_wallet->get_address();
             crypto::cn_fast_hash(&dsts[0].addr, sizeof(cryptonote::account_public_address), msg.m_chat);
@@ -2579,14 +2579,22 @@ bool WalletImpl::doInit(const string &daemon_address, const std::string &proxy_a
     return true;
 }
 
-bool WalletImpl::parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
+bool WalletImpl::parse_uri(const std::string &uri, std::string &address, bool& has_view_skey, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
 {
-    return m_wallet->parse_uri(uri, address, payment_id, amount, tx_description, recipient_name, unknown_parameters, error);
+    return m_wallet->parse_uri(uri, address, has_view_skey, payment_id, amount, tx_description, recipient_name, unknown_parameters, error);
 }
 
 std::string WalletImpl::make_uri(const std::string &address, const std::string &payment_id, uint64_t amount, const std::string &tx_description, const std::string &recipient_name, std::string &error) const
 {
     return m_wallet->make_uri(address, payment_id, amount, tx_description, recipient_name, error);
+}
+
+bool WalletImpl::isMultiUserAddress(const std::string &address) const
+{
+  cryptonote::address_parse_info info;
+  if(!get_account_address_from_str(info, m_wallet->nettype(), address))
+    return false;
+  return info.has_view_skey;
 }
 
 std::string WalletImpl::getDefaultDataDir() const

@@ -41,13 +41,26 @@ public:
     ~AddressBookImpl();
     
     // Fetches addresses from Wallet2
-    bool newMultiUserRow(const std::string& description, std::function<void(AddressBookRow& row, std::size_t rowId)> callback) override;
+    bool newMultiUserRow(const std::string& description, const std::string& ab, const std::string& bg, std::function<void(AddressBookRow& row, std::size_t rowId)> callback) override;
     bool addRow(const AddressBookRow& row, std::size_t& rowId) override;
     bool getRow(std::size_t index, std::function<void(AddressBookRow& row)> callback) override;
     bool setDescription(std::size_t index, const std::string &description) override;
+    bool setFields(int index, const std::string &address, const std::string &description, const std::string &shortAb, const std::string &backgroundAb) override;
     bool isMultiUser(std::size_t index) override;
     bool deleteRow(std::size_t rowId) override;
+    bool undeleteRow(std::size_t rowId) override;
+    bool blockRow(std::size_t rowId) override;
+    bool unblockRow(std::size_t rowId) override;
+    void setTags(std::size_t row_id, const std::string& tags) override;
+    bool getTags(std::size_t row_id, std::string& tags) const override;
+    bool addTag(std::size_t row_id, const std::string& tag) override;
+    bool delTag(std::size_t row_id, const std::string& tag) override;
+    bool isTaged(std::size_t row_id, const std::string& tag) override;
+    void addAttr(std::size_t row_id, const std::string& name, const std::string& val) override;
+    bool getAttr(std::size_t row_id, const std::string& name, std::string& val) const override;
+    bool delAttr(std::size_t row_id, const std::string& name) override;
     size_t count() const override;
+    void getShortNameBackgroundColorRandomize(std::string& bc) override;
      
     // Error codes. See AddressBook:ErrorCode enum in wallet2_api.h
     std::string errorString() const override {return m_errorString;}

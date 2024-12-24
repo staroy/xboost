@@ -652,10 +652,32 @@ namespace cryptonote
       {
         td.tx = ci->second;
       }
-      else if (!(meta.pruned ? parse_and_validate_tx_base_from_blob(txblob, td.tx) : parse_and_validate_tx_from_blob(txblob, td.tx)))
+      else if (meta.pruned)
       {
-        MERROR("Failed to parse tx from txpool");
-        return false;
+        if (!parse_and_validate_tx_base_from_blob(txblob, td.tx))
+        {
+          MERROR("Failed to parse tx from txpool");
+          return false;
+        }
+        cryptonote::transaction t;
+        if (!parse_and_validate_tx_from_blob(txblob, t))
+        {
+          MERROR("Failed to parse tx from txpool");
+          return false;
+        }
+        if (t.message.empty())
+        {
+          MERROR("Message tx from txpool is empty!");
+        }
+        td.tx.message = t.message;
+      }
+      else if (!meta.pruned)
+      {
+        if(!parse_and_validate_tx_from_blob(txblob, td.tx))
+        {
+          MERROR("Failed to parse tx from txpool");
+          return false;
+        }
       }
       else
       {
@@ -953,7 +975,14 @@ namespace cryptonote
     txs.reserve(m_blockchain.get_txpool_tx_count(include_sensitive));
     m_blockchain.for_all_txpool_txes([&txs](const crypto::hash &txid, const txpool_tx_meta_t &meta, const cryptonote::blobdata_ref *bd){
       transaction tx;
-      if (!(meta.pruned ? parse_and_validate_tx_base_from_blob(*bd, tx) : parse_and_validate_tx_from_blob(*bd, tx)))
+      bool r = false;
+      if(meta.pruned)
+      {
+        r = parse_and_validate_tx_base_from_blob(*bd, tx);
+      }
+      else
+        r = parse_and_validate_tx_from_blob(*bd, tx);
+      if (!r)
       {
         MERROR("Failed to parse tx from txpool");
         // continue

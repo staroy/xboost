@@ -233,11 +233,14 @@ DEF( uint64_t,  MAX_TX_EXTRA_MSG_SIZE,          256)
 DEF( uint64_t,  MAX_TX_MSG_PRUNABLE_SIZE,       8192)
 DEF( uint64_t,  MSG_TX_AMOUNT,                  1000000)
 
-#define MSG_TX_EXTRA_TYPE                       100
+#define MSG_TX_EXTRA_TYPE                       0x0100
+#define MSG_TX_EXTRA_CTRL                       0x0101
+#define MSG_TX_EXTRA_USER                       0x1000
+
 #define MSG_TX_EXTRA_FREQ_0                     0
 
 // used to choose atomic swap message type
-#define ATOMIC_SWAP_MSG_TX_EXTRA_TYPE           (MSG_TX_EXTRA_TYPE + 1)
+#define ATOMIC_SWAP_MSG_TX_EXTRA_TYPE           0x0110
 #define ATOMIC_SWAP_HASH_X_UNLOCK_TIME          (CRYPTONOTE_MAX_BLOCK_NUMBER - 1)
 
 // New constants are intended to go here

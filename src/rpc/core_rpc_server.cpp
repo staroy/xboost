@@ -1132,6 +1132,7 @@ namespace cryptonote
           }
         }
       }
+
       e.in_pool = pool_tx_hashes.find(tx_hash) != pool_tx_hashes.end();
       if (e.in_pool)
       {

@@ -35,10 +35,10 @@
 
 #define PARSE_URI(uri, expected) \
   std::string address, payment_id, recipient_name, description, error; \
-  uint64_t amount; \
+  uint64_t amount; bool has_view_skey; \
   std::vector<std::string> unknown_parameters; \
   tools::wallet2 w(cryptonote::TESTNET); \
-  bool ret = w.parse_uri(uri, address, payment_id, amount, description, recipient_name, unknown_parameters, error); \
+  bool ret = w.parse_uri(uri, address, hash_view_skey, payment_id, amount, description, recipient_name, unknown_parameters, error); \
   ASSERT_EQ(ret, expected);
 
 TEST(uri, empty_string)

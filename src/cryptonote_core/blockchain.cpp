@@ -2896,7 +2896,28 @@ bool Blockchain::get_transactions(const t_ids_container& txs_ids, t_tx_container
       if (res)
       {
         txs.push_back(transaction());
-        res = pruned ? parse_and_validate_tx_base_from_blob(tx, txs.back()) : parse_and_validate_tx_from_blob(tx, txs.back());
+        if(pruned)
+        {
+          res = parse_and_validate_tx_base_from_blob(tx, txs.back());
+          if(res)
+          {
+            cryptonote::blobdata msg;
+            if(m_db->get_message_tx_blob(tx_hash, msg))
+            {
+              binary_archive<false> ba{epee::strspan<std::uint8_t>(msg)};
+              if(!::serialization::serialize(ba, txs.back().message))
+              {
+                LOG_ERROR("Invalid transaction message");
+                return false;
+              }
+            }
+          }
+        }
+        else
+        {
+          res = parse_and_validate_tx_from_blob(tx, txs.back());
+        }
+
         if (!res)
         {
           LOG_ERROR("Invalid transaction");

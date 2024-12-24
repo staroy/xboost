@@ -48,8 +48,8 @@ set(wallet_sources
   wallet2.cpp
   wallet_args.cpp
   ringdb.cpp
-  addrdb.cpp
-  msgdb.cpp
+  adr-db.cpp
+  msg-db.cpp
   node_rpc_proxy.cpp
   message_store.cpp
   message_transporter.cpp

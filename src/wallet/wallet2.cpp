@@ -51,7 +51,7 @@ using namespace epee;
 #include "cryptonote_core/tx_sanity_check.h"
 #include "wallet_rpc_helpers.h"
 #include "wallet2.h"
-#include "addrdb.h"
+#include "adr-db.h"
 #include "wallet_args.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "net/parse.h"
@@ -157,6 +157,12 @@ using namespace cryptonote;
 static const std::string MULTISIG_SIGNATURE_MAGIC = "SigMultisigPkV1";
 
 static const std::string ASCII_OUTPUT_MAGIC = "LidAsciiDataV1";
+
+namespace Monero {
+    const char *TAG_DEL = "D;";
+    const char *TAG_BLOCK = "B;";
+    const char *TAG_ANON = "A;";
+}
 
 boost::mutex tools::wallet2::default_daemon_address_lock;
 std::string tools::wallet2::default_daemon_address = "";
@@ -1037,6 +1043,14 @@ crypto::chacha_key derive_cache_key(const crypto::chacha_key& keys_data_key)
 
 namespace tools
 {
+
+crypto::hash address_to_hash(const cryptonote::account_public_address &chat)
+{
+  crypto::hash res;
+  crypto::cn_fast_hash(&chat, sizeof(chat), res);
+  return res;
+}
+
 constexpr const std::chrono::seconds wallet2::rpc_timeout;
 const char* wallet2::tr(const char* str) { return i18n_translate(str, "tools::wallet2"); }
 
@@ -2314,40 +2328,18 @@ void wallet2::process_new_message_chat(uint64_t height, const crypto::hash &txid
     if(!find_tx_extra_field_by_type(tx_extra_fields, emp))
       return;  // message not found
 
-    cryptonote::COMMAND_RPC_GET_TRANSACTIONS::request req = AUTO_VAL_INIT(req);
-    cryptonote::COMMAND_RPC_GET_TRANSACTIONS::response res = AUTO_VAL_INIT(res);
-    req.decode_as_json = false;
-    req.prune = false;
-
-    req.txs_hashes.push_back(epee::string_tools::pod_to_hex(txid));
-
-    {
-      const boost::lock_guard<boost::recursive_mutex> lock{m_daemon_rpc_mutex};
-      req.client = get_client_signature();
-      bool r = epee::net_utils::invoke_http_json("/gettransactions", req, res, *m_http_client, rpc_timeout);
-      if(!r || res.txs.size() != 1)
-      {
-        LOG_PRINT_L0("Failed to get transaction from daemon");
-        return;
-      }
-    }
-
-    cryptonote::blobdata bd; cryptonote::transaction mtx;
-    if(!epee::string_tools::parse_hexstr_to_binbuff(res.txs[0].as_hex, bd))
-    {
-      LOG_PRINT_L0("Failed to parse tx data");
+    if(emp.freq != MSG_TX_EXTRA_FREQ_0)
       return;
-    }
 
-    if(!parse_and_validate_tx_from_blob(bd, mtx))
+    if(tx.message.empty())
     {
-      LOG_PRINT_L0("Invalid tx data");
+      LOG_PRINT_L0("Transaction message is empty : " << txid);
       return;
     }
 
     t = emp.type;
     f = emp.freq;
-    msg = mtx.message;
+    msg = tx.message;
 
     crypto::hash hash;
     crypto::cn_fast_hash(msg.data(), msg.size(), hash);
@@ -2359,6 +2351,15 @@ void wallet2::process_new_message_chat(uint64_t height, const crypto::hash &txid
   }
   else
   {
+    if(em.freq != MSG_TX_EXTRA_FREQ_0)
+      return;
+
+    if(em.data.empty())
+    {
+      LOG_PRINT_L0("Transaction fix message is empty : " << txid);
+      return;
+    }
+
     t = em.type;
     f = em.freq;
     msg = em.data;
@@ -2376,11 +2377,11 @@ void wallet2::process_new_message_chat(uint64_t height, const crypto::hash &txid
     return;
   }
 
-  uint64_t cnt = m_addrdb->size();
+  uint64_t cnt = m_adr_db->size();
   for(uint64_t n=0; n<cnt; n++)
   {
     address_book_row row;
-    if (!m_addrdb->get(n,row) || !row.m_has_view_skey)
+    if (!m_adr_db->get(n,row) || !row.m_has_view_skey)
       continue;
     if(cryptonote::decrypt(msg, ek.pub_key, row.m_view_skey, uncipher) &&
        on_message_chat_received(height, txid, row.m_view_skey, t, f, uncipher, ts))
@@ -3107,7 +3108,7 @@ void read_pool_txs(const cryptonote::COMMAND_RPC_GET_TRANSACTIONS::request &req,
         if (tx_entry.in_pool)
         {
           cryptonote::transaction tx;
-          cryptonote::blobdata bd;
+          //cryptonote::blobdata bd;
           crypto::hash tx_hash;
 
           if (get_pruned_tx(tx_entry, tx, tx_hash))
@@ -3565,6 +3566,8 @@ void wallet2::pull_and_parse_next_blocks(bool first, bool try_incremental, uint6
             boost::unique_lock<boost::mutex> lock(error_lock);
             error = true;
           }
+          auto tx = parsed_blocks[i].txes[j];
+          MDEBUG("Receive message: " << epee::to_hex::string({(const unsigned char*)tx.message.data(), tx.message.size()}));
         }, true);
       }
     }
@@ -4178,8 +4181,41 @@ uint8_t random_colors[] = {
     0, 0, 0       //,"Black" }
 };
 
+void get_short_name_background_color_randomize_p(uint8_t *bc)
+{
+  const uint8_t *color = random_colors + (3 * (std::rand() % 164));
+  bc[0] = color[0];
+  bc[1] = color[1];
+  bc[2] = color[2];
+}
 
-bool wallet2::new_multi_user_book_row(const std::string& description, address_book_row& row, size_t& row_id)
+void get_short_name_text_color_from_background(uint8_t *b, uint8_t *c)
+{
+  if(0.3*b[0]+0.59*b[1]+0.11*b[2] > 128.0)
+  {                
+    c[0] = 0x30;
+    c[1] = 0x30;
+    c[2] = 0x30;
+  }
+  else
+  {
+    c[0] = 0xf0;
+    c[1] = 0xf0;
+    c[2] = 0xf0;
+  }
+}
+
+void wallet2::get_short_name_background_color_randomize(std::vector<uint8_t>& bc)
+{
+   uint8_t p[3];
+   get_short_name_background_color_randomize_p(p);
+   bc.push_back(p[0]);
+   bc.push_back(p[1]);
+   bc.push_back(p[2]);
+}
+
+
+bool wallet2::new_multi_user_book_row(const std::string& description, const std::string& ab, const std::vector<uint8_t>& bg, address_book_row& row, size_t& row_id)
 {
   crypto::generate_keys(row.m_address.m_spend_public_key, row.m_spend_skey);
   crypto::generate_keys(row.m_address.m_view_public_key, row.m_view_skey);
@@ -4188,66 +4224,71 @@ bool wallet2::new_multi_user_book_row(const std::string& description, address_bo
   row.m_has_payment_id = false;
   row.m_has_spend_skey = true;
   row.m_has_view_skey = true;
-  row.m_ab = row.m_description.substr(0,2);
-  uint8_t *color = random_colors + (3 * (std::rand() % 164));
-  row.m_ab_background[0] = color[0];
-  row.m_ab_background[1] = color[1];
-  row.m_ab_background[2] = color[2];
-  if(0.3*color[0]+0.59*color[1]+0.11*color[2] > 128.0)
-  {                
-    row.m_ab_color[0] = 0x30;
-    row.m_ab_color[1] = 0x30;
-    row.m_ab_color[2] = 0x30;
+  row.m_short_name = ab; //row.m_description.substr(0,2);
+
+  if(bg.size() > 2)
+  {
+    row.m_short_name_background[0] = bg[0];
+    row.m_short_name_background[1] = bg[1];
+    row.m_short_name_background[2] = bg[2];
   }
   else
-  {
-    row.m_ab_color[0] = 0xf0;
-    row.m_ab_color[1] = 0xf0;
-    row.m_ab_color[2] = 0xf0;
-  }
-  return m_addrdb->add(row, row_id);
+    get_short_name_background_color_randomize_p(row.m_short_name_background);
+
+  get_short_name_text_color_from_background(row.m_short_name_background, row.m_short_name_color);
+  return m_adr_db->add(row, row_id);
 }
                    
 bool wallet2::add_address_book_row(const wallet2::address_book_row& row, size_t& row_id)
 {
+  bool is_anon = row.m_address.m_spend_public_key == crypto::null_pkey || row.m_address.m_view_public_key == crypto::null_pkey;
+
   size_t id;
-  if(get_address_book_row_id(row.m_address, id))
-    return false;
-  address_book_row data(row);
-  data.m_ab = data.m_description.substr(0,2);
-  uint8_t *color = random_colors + (3 * (std::rand() % 164));
-  data.m_ab_background[0] = color[0];
-  data.m_ab_background[1] = color[1];
-  data.m_ab_background[2] = color[2];
-  if(0.3*color[0]+0.59*color[1]+0.11*color[2] > 128.0)
-  {                
-    data.m_ab_color[0] = 0x30;
-    data.m_ab_color[1] = 0x30;
-    data.m_ab_color[2] = 0x30;
+  if(is_anon)
+  {
+    if(get_address_book_row_id(row.m_address_hash, id))
+      return false;
   }
   else
   {
-    data.m_ab_color[0] = 0xf0;
-    data.m_ab_color[1] = 0xf0;
-    data.m_ab_color[2] = 0xf0;
+    if(get_address_book_row_id(row.m_address, id))
+      return false;
   }
-  return m_addrdb->add(data, row_id);
+
+  address_book_row data(row);
+
+  if(data.m_description.empty())
+  {
+    std::string s = is_anon ? epee::string_tools::pod_to_hex(row.m_address_hash) : cryptonote::get_account_address_as_str(m_nettype, false, row.m_address);
+    data.m_description = s.substr(0,4) + " ... " + s.substr(s.size()-4,4);
+    data.m_short_name = s.substr(0,1) + " ... " + s.substr(s.size()-1,1);
+  }
+
+  if(data.m_short_name.empty())
+    data.m_short_name = data.m_description.substr(0,2);
+
+  if(data.m_short_name_background[0] == 0 && data.m_short_name_background[1] == 0 && data.m_short_name_background[2] == 0)
+    get_short_name_background_color_randomize_p(data.m_short_name_background);
+
+  get_short_name_text_color_from_background(data.m_short_name_background, data.m_short_name_color);
+
+  return m_adr_db->add(data, row_id);
 }
 
 bool wallet2::set_address_book_row(size_t row_id, const wallet2::address_book_row& row)
 {
-  return m_addrdb->set(row_id, row);
+  return m_adr_db->set(row_id, row);
 }
 
 bool wallet2::get_address_book_row(size_t row_id, address_book_row& row)
 {
-  return m_addrdb->get(row_id, row);
+  return m_adr_db->get(row_id, row);
 }
 
 bool wallet2::get_address_book_row_id(const cryptonote::account_public_address &address, size_t &row_id)
 {
   uint64_t id;
-  if(m_addrdb->get_id(address, id))
+  if(m_adr_db->get_id(address, id))
   {
     row_id = size_t(id);
     return true;
@@ -4258,7 +4299,7 @@ bool wallet2::get_address_book_row_id(const cryptonote::account_public_address &
 bool wallet2::get_address_book_row_id(const crypto::hash &addr, size_t &row_id)
 {
   uint64_t id;
-  if(m_addrdb->get_id(addr, id))
+  if(m_adr_db->get_id(addr, id))
   {
     row_id = size_t(id);
     return true;
@@ -4266,41 +4307,357 @@ bool wallet2::get_address_book_row_id(const crypto::hash &addr, size_t &row_id)
   return false;
 }
 
+bool wallet2::do_message_ctrl_send_for_all_multi_users(size_t row_id, uint64_t op)
+{
+  address_book_row row;
+  if(m_adr_db->get(uint64_t(row_id), row) && !row.m_has_view_skey)
+  {
+    crypto::hash my_adr_hash = address_to_hash(m_account_public_address);
+    for(size_t n=0; n<m_adr_db->size(); n++)
+    {
+      address_book_row ch;
+      if(n!=row_id && m_adr_db->get(uint64_t(n), ch) && ch.m_has_spend_skey)
+      {
+        message_ctrl ctl;
+        ctl.m_chat = address_to_hash(ch.m_address);
+        ctl.m_sender = my_adr_hash;
+        ctl.m_op = op;
+        ctl.m_data["adr"] = epee::string_tools::pod_to_hex(row.m_address_hash);
+        crypto::signature sign;
+        crypto::generate_signature(my_adr_hash, ch.m_address.m_spend_public_key, ch.m_spend_skey, sign);
+        ctl.m_data["sign"] = epee::string_tools::pod_to_hex(sign);
+        do_message_ctrl_send(ch.m_address, ctl);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+bool wallet2::do_message_ctrl_send(const crypto::hash chat, const crypto::hash txid, uint64_t op)
+{
+  crypto::hash my_adr_hash = address_to_hash(m_account_public_address);
+  address_book_row ch; uint64_t ch_id;
+  if(m_adr_db->get_id(chat, ch_id) && m_adr_db->get(ch_id, ch) && ch.m_has_spend_skey)
+  {
+    message_ctrl ctl;
+    ctl.m_chat = chat;
+    ctl.m_sender = my_adr_hash;
+    ctl.m_op = op;
+    ctl.m_data["txid"] = epee::string_tools::pod_to_hex(txid);
+    crypto::signature sign;
+    crypto::generate_signature(my_adr_hash, ch.m_address.m_spend_public_key, ch.m_spend_skey, sign);
+    ctl.m_data["sign"] = epee::string_tools::pod_to_hex(sign);
+    do_message_ctrl_send(ch.m_address, ctl);
+  }
+  return true;
+}
+
+bool wallet2::delete_address_book_row(size_t row_id)
+{
+  if(m_adr_db->add_tag(row_id, Monero::TAG_DEL))
+    return do_message_ctrl_send_for_all_multi_users(row_id, MESSAGE_CTRL_USER_DELETE);
+  return false;
+}
+
+bool wallet2::undelete_address_book_row(size_t row_id)
+{
+  if(m_adr_db->del_tag(row_id, Monero::TAG_DEL))
+    return do_message_ctrl_send_for_all_multi_users(row_id, MESSAGE_CTRL_USER_UNDELETE);
+  return false;
+}
+
+bool wallet2::block_address_book_row(size_t row_id)
+{
+  if(m_adr_db->add_tag(row_id, Monero::TAG_BLOCK))
+    return do_message_ctrl_send_for_all_multi_users(row_id, MESSAGE_CTRL_USER_BLOCK);
+  return false;
+}
+
+bool wallet2::unblock_address_book_row(size_t row_id)
+{
+  if(m_adr_db->del_tag(row_id, Monero::TAG_BLOCK))
+    return do_message_ctrl_send_for_all_multi_users(row_id, MESSAGE_CTRL_USER_UNBLOCK);
+  return false;
+}
+
 bool wallet2::is_address_book_row_multi_user(size_t row_id) {
   address_book_row row;
-  if(m_addrdb->get(uint64_t(row_id), row))
+  if(m_adr_db->get(uint64_t(row_id), row))
     return row.m_has_view_skey;
   return false;
 }
 
-bool wallet2::delete_address_book_row(std::size_t row_id) {
-  return true;
+void wallet2::set_address_book_tags(size_t row_id, const std::string& tags)
+{
+  m_adr_db->set_tags(row_id, tags);
+}
+
+bool wallet2::get_address_book_tags(size_t row_id, std::string& tags) const
+{
+  return m_adr_db->get_tags(row_id, tags);
+}
+
+bool wallet2::is_address_book_taged(size_t row_id, const std::string& tag)
+{
+  return m_adr_db->is_taged(row_id, tag);
+}
+
+bool wallet2::add_address_book_tag(size_t row_id, const std::string& tag)
+{
+  return m_adr_db->add_tag(row_id, tag);
+}
+
+bool wallet2::del_address_book_tag(size_t row_id, const std::string& tag)
+{
+  return m_adr_db->del_tag(row_id, tag);
+}
+
+void wallet2::add_address_book_attr(size_t row_id, const std::string& name, const std::string& val)
+{
+  m_adr_db->add_attr(row_id, name, val);
+}
+
+bool wallet2::get_address_book_attr(size_t row_id, const std::string& name, std::string& val) const
+{
+  return m_adr_db->get_attr(row_id, name, val);
+}
+
+bool wallet2::del_address_book_attr(size_t row_id, const std::string& name)
+{
+  return m_adr_db->del_attr(row_id, name);
 }
 
 size_t wallet2::get_address_book_count()
 {
-  return uint64_t(m_addrdb->size());
+  return uint64_t(m_adr_db->size());
 }
 
-bool wallet2::add_message_to_chat(const cryptonote::account_public_address& addr, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent)
+static const char *my_default_description = "my_default_description";
+static const char *my_default_short_name = "my_default_short_name";
+
+bool wallet2::get_my_default_description(std::string& desc) const
+{
+  bool r = get_attribute(my_default_description, desc);
+  if(!r || desc.empty())
+  {
+    std::string addr = get_address_as_str();
+    desc = addr.substr(0,3) + " ... " + addr.substr(addr.size()-3,3);
+  }
+  return true;
+}
+
+bool wallet2::get_my_default_short_name(std::string& val) const
+{
+  bool r = get_attribute(my_default_short_name, val);
+  if(!r || val.empty())
+  {
+    std::string addr = get_address_as_str();
+    val = addr.substr(0,1) + addr.substr(addr.size()-1,1);
+  }
+  return true;
+}
+
+void wallet2::set_my_default_description(const std::string& desc)
+{
+  set_attribute(my_default_description, desc);
+}
+
+void wallet2::set_my_default_short_name(const std::string& val)
+{
+  set_attribute(my_default_short_name, val);
+}
+
+
+bool wallet2::do_message_ctrl_send(const cryptonote::account_public_address& chat, const message_ctrl& ctrl)
+{
+  try
+  {
+    message_ctrl ctl(ctrl);
+    std::stringstream oss;
+    binary_archive<true> ar(oss);
+    THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar, ctl),
+          tools::error::wallet_internal_error, "Failed serialize message");
+
+    std::vector<uint8_t> extra;
+    cryptonote::tx_extra_msg_prepare_prunable em{MSG_TX_EXTRA_CTRL, MSG_TX_EXTRA_FREQ_0, oss.str()};
+    cryptonote::set_msg_prepare_prunable_to_extra(extra, em);
+
+    cryptonote::tx_destination_entry de;
+    de.amount = MSG_TX_AMOUNT;
+    de.addr = chat;
+    de.is_integrated = false;
+    de.is_subaddress = false;
+
+    std::vector<cryptonote::tx_destination_entry> dsts;
+    dsts.push_back(de);
+
+    const size_t min_ring_size = get_min_ring_size();
+    size_t fake_outs_count = min_ring_size - 1;
+
+    std::vector<tools::wallet2::pending_tx> ptx_vector =
+      create_transactions_2(
+        dsts,
+        fake_outs_count,
+        0, // unlock_time
+        0, // priority
+        extra,
+        0, // m_current_subaddress_account
+        {}
+      );
+
+    if(ptx_vector.size() == 1)
+    {
+      commit_tx(ptx_vector[0]);
+    }
+  }
+  catch (const std::exception& e)
+  {
+    MLOG_RED(el::Level::Warning, "Failed send of message: " << e.what());
+    return false;
+  }
+  return true;
+}
+
+/*bool wallet2::block_address_book_row(size_t row_id, const std::string& description, const std::string& short_name)
+{
+  try
+  {
+    message_ctrl ctl;
+    ctl.m_op = MESSAGE_CTRL_SUBSCRIBE;
+    ctl.m_data["address"] = cryptonote::get_account_address_as_str(nettype(), false, m_account_public_address);
+    ctl.m_data["description"] = description;
+    ctl.m_data["short_name"] = short_name;
+    address_book_row chat_row;
+    m_adr_db->get(row_id, chat_row);
+    crypto::cn_fast_hash(&chat_row.m_address, sizeof(chat_row.m_address), ctl.m_chat);
+    crypto::cn_fast_hash(&m_account_public_address, sizeof(m_account_public_address), ctl.m_sender);
+
+    std::stringstream oss;
+    binary_archive<true> ar(oss);
+    THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar, ctl),
+          tools::error::wallet_internal_error, "Failed serialize message");
+
+    std::vector<uint8_t> extra;
+    cryptonote::tx_extra_msg_prepare_prunable em{MSG_TX_EXTRA_CTRL, MSG_TX_EXTRA_FREQ_0, oss.str()};
+    cryptonote::set_msg_prepare_prunable_to_extra(extra, em);
+
+    cryptonote::tx_destination_entry de;
+    de.amount = MSG_TX_AMOUNT;
+    de.addr = chat_row.m_address;
+    de.is_integrated = false;
+    de.is_subaddress = false;
+
+    std::vector<cryptonote::tx_destination_entry> dsts;
+    dsts.push_back(de);
+
+    const size_t min_ring_size = get_min_ring_size();
+    size_t fake_outs_count = min_ring_size - 1;
+
+    std::vector<tools::wallet2::pending_tx> ptx_vector =
+      create_transactions_2(
+        dsts,
+        fake_outs_count,
+        0 // unlock_time,
+        0 // priority,
+        extra,
+        0 // m_current_subaddress_account,
+        {}
+      );
+
+    if(ptx_vector.size() == 1)
+    {
+      commit_tx(ptx_vector[0]);
+      //db_message_chat_add(n, chat, msg.m_sender, text, msg.m_enable_comments, get_transaction_hash(ptx_vector[0].tx), 0, 0, parent);
+    }
+  }
+  catch (const std::exception& e)
+  {
+    MLOG_RED(el::Level::Warning, "Failed send of message: " << e.what());
+    return false;
+  }
+  return true;
+}*/
+
+/*bool wallet2::unsubscribe_from_address_book_row(size_t row_id)
+{
+  try
+  {
+    message_ctrl ctl;
+    ctl.m_op = MESSAGE_CTRL_UNSUBSCRIBE;
+    address_book_row chat_row;
+    m_adr_db->get(row_id, chat_row);
+    crypto::cn_fast_hash(&chat_row.m_address, sizeof(chat_row.m_address), ctl.m_chat);
+    crypto::cn_fast_hash(&m_account_public_address, sizeof(m_account_public_address), ctl.m_sender);
+
+    std::stringstream oss;
+    binary_archive<true> ar(oss);
+    THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar, ctl),
+          tools::error::wallet_internal_error, "Failed serialize message");
+
+    std::vector<uint8_t> extra;
+    cryptonote::tx_extra_msg_prepare_prunable em{MSG_TX_EXTRA_CTRL, MSG_TX_EXTRA_FREQ_0, oss.str()};
+    cryptonote::set_msg_prepare_prunable_to_extra(extra, em);
+
+    cryptonote::tx_destination_entry de;
+    de.amount = MSG_TX_AMOUNT;
+    de.addr = chat_row.m_address;
+    de.is_integrated = false;
+    de.is_subaddress = false;
+
+    std::vector<cryptonote::tx_destination_entry> dsts;
+    dsts.push_back(de);
+
+    const size_t min_ring_size = get_min_ring_size();
+    size_t fake_outs_count = min_ring_size - 1;
+
+    std::vector<tools::wallet2::pending_tx> ptx_vector =
+      create_transactions_2(
+        dsts,
+        fake_outs_count,
+        0, // unlock_time,
+        0, // priority,
+        extra,
+        0, // m_current_subaddress_account,
+        {}
+      );
+
+    if(ptx_vector.size() == 1)
+    {
+      commit_tx(ptx_vector[0]);
+      //db_message_chat_add(n, chat, msg.m_sender, text, msg.m_enable_comments, get_transaction_hash(ptx_vector[0].tx), 0, 0, parent);
+    }
+  }
+  catch (const std::exception& e)
+  {
+    MLOG_RED(el::Level::Warning, "Failed send of message: " << e.what());
+    return false;
+  }
+  return true;
+}*/
+
+bool wallet2::add_message_to_chat(const cryptonote::account_public_address& addr, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent)
 {
     crypto::hash chat;
     crypto::cn_fast_hash(&addr, sizeof(addr), chat);
-    return add_message_to_chat(chat, text, enable_comments, amount, unprunable, n, parent);
+    return add_message_to_chat(chat, text, description, short_name, enable_comments, is_anon, amount, unprunable, n, parent);
 }
 
-bool wallet2::add_message_to_chat(const crypto::hash& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent)
+bool wallet2::add_message_to_chat(const crypto::hash& chat, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent)
 {
   try
   {
     bool is_sub_chat = parent != crypto::null_hash;
 
     message_data msg;
-    msg.m_text = text;
+    msg.m_data = text;
+    msg.m_description = description;
+    msg.m_short_name = short_name;
     msg.m_enable_comments = enable_comments && !is_sub_chat;
     msg.m_chat = chat;
     msg.m_parent = parent;
-    crypto::cn_fast_hash(&m_account_public_address, sizeof(m_account_public_address), msg.m_sender);
+    msg.m_sender = address_to_hash(m_account_public_address);
+    if(!is_anon) msg.m_address = get_address_as_str();
 
     std::stringstream oss;
     binary_archive<true> ar(oss);
@@ -4338,7 +4695,7 @@ bool wallet2::add_message_to_chat(const crypto::hash& chat, const std::string& t
     }
 
     address_book_row row;
-    m_addrdb->get(idx, row);
+    m_adr_db->get(idx, row);
 
     cryptonote::tx_destination_entry de;
     de.amount = amount > 0 ? amount : MSG_TX_AMOUNT;
@@ -4366,7 +4723,7 @@ bool wallet2::add_message_to_chat(const crypto::hash& chat, const std::string& t
     if(ptx_vector.size() == 1)
     {
       commit_tx(ptx_vector[0]);
-      db_message_chat_add(n, chat, msg.m_sender, text, msg.m_enable_comments, get_transaction_hash(ptx_vector[0].tx), 0, 0, parent);
+      db_message_chat_add(n, chat, msg.m_sender, text, msg.m_description, msg.m_short_name, msg.m_enable_comments, get_transaction_hash(ptx_vector[0].tx), 0, 0, parent);
     }
   }
   catch (const std::exception& e)
@@ -4382,6 +4739,8 @@ bool wallet2::db_message_chat_add(
   const cryptonote::account_public_address& chat,
   const cryptonote::account_public_address& sender,
   const std::string& text,
+  const std::string& description,
+  const std::string& short_name,
   bool enable_comments,
   const crypto::hash& txid,
   uint64_t height,
@@ -4391,22 +4750,24 @@ bool wallet2::db_message_chat_add(
   if(timestamp == 0)
     timestamp = time(NULL);
 
-  msgdb::message_data data{
-      m_msgdb->to_hash(chat),
-      m_msgdb->to_hash(sender),
+  msg_db::message_data data{
+      address_to_hash(chat),
+      address_to_hash(sender),
       height, // height
       timestamp, // timestamp
       text,
+      description,
+      short_name,
       enable_comments};
 
-  if(!m_msgdb->add(txid, data, n, parent))
+  if(!m_msg_db->add(txid, data, n, parent))
     return false;
 
   address_book_row row;
-  if(m_addrdb->get(chat, row))
+  if(m_adr_db->get(chat, row))
   {
      row.m_timestamp = timestamp;
-     m_addrdb->set(chat, row);
+     m_adr_db->set(chat, row);
   }
   return true;
 }
@@ -4416,6 +4777,8 @@ bool wallet2::db_message_chat_add(
   const crypto::hash& chat,
   const crypto::hash& sender,
   const std::string& text,
+  const std::string& description,
+  const std::string& short_name,
   bool enable_comments,
   const crypto::hash& txid,
   uint64_t height,
@@ -4425,43 +4788,48 @@ bool wallet2::db_message_chat_add(
   if(timestamp == 0)
     timestamp = time(NULL);
 
-  msgdb::message_data data{
-      m_msgdb->to_hash(chat),
-      m_msgdb->to_hash(sender),
+  msg_db::message_data data{
+      chat,
+      sender,
       height, // height
       timestamp, // timestamp
       text,
+      description,
+      short_name,
       enable_comments};
 
-  if(!m_msgdb->add(txid, data, n, parent))
+  if(!m_msg_db->add(txid, data, n, parent))
     return false;
 
   address_book_row row;
-  if(m_addrdb->get(chat, row))
+  if(m_adr_db->get(chat, row))
   {
      row.m_timestamp = timestamp;
-     m_addrdb->set(chat, row);
+     m_adr_db->set(chat, row);
   }
   return true;
 }
 
-bool wallet2::do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent)
+bool wallet2::do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent)
 {
     crypto::hash chat;
     crypto::cn_fast_hash(&addr, sizeof(addr), chat);
-    return do_message_chat_send(chat, data, enable_comments, amount, unprunable, type, freq, parent);
+    return do_message_chat_send(chat, data, description, short_name, enable_comments, is_anon, amount, unprunable, type, freq, parent);
 }
 
-bool wallet2::do_message_chat_send(const crypto::hash& chat, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent)
+bool wallet2::do_message_chat_send(const crypto::hash& chat, const std::string& data, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent)
 {
   try
   {
     message_data msg;
-    msg.m_text = data;
+    msg.m_data = data;
+    msg.m_description = description;
+    msg.m_short_name = short_name;
     msg.m_enable_comments = enable_comments;
     msg.m_chat = chat;
     msg.m_parent = parent;
-    crypto::cn_fast_hash(&m_account_public_address, sizeof(m_account_public_address), msg.m_sender);
+    msg.m_sender = address_to_hash(m_account_public_address);
+    if(!is_anon) msg.m_address = get_address_as_str();
 
     std::stringstream oss;
     binary_archive<true> ar(oss);
@@ -4481,10 +4849,10 @@ bool wallet2::do_message_chat_send(const crypto::hash& chat, const std::string& 
     }
 
     cryptonote::account_public_address chat_addr; size_t addr_idx;
-    if(!m_addrdb->get_id(chat, addr_idx))
+    if(!m_adr_db->get_id(chat, addr_idx))
     {
       crypto::hash parent_chat;
-      if(!m_msgdb->get_parent(chat, parent_chat) || !m_addrdb->get_id(parent_chat, addr_idx))
+      if(!m_msg_db->get_parent(chat, parent_chat) || !m_adr_db->get_id(parent_chat, addr_idx))
       {
         MLOG_RED(el::Level::Warning, "Failed get parent of chat");
         return false;
@@ -4492,7 +4860,7 @@ bool wallet2::do_message_chat_send(const crypto::hash& chat, const std::string& 
     }
 
     address_book_row row;
-    m_addrdb->get(addr_idx, row);
+    m_adr_db->get(addr_idx, row);
     chat_addr = row.m_address;
 
     cryptonote::tx_destination_entry de;
@@ -4535,51 +4903,143 @@ bool wallet2::on_message_chat_received(uint64_t height, const crypto::hash& txid
 {
   try
   {
-    if(m_msgdb->has(txid))
+    if(m_msg_db->has(txid))
     {
       if(timestamp > 0) {
-        m_msgdb->set_timestamp(txid, timestamp);
+        m_msg_db->set_timestamp(txid, timestamp);
         if(height > 0)
-          m_msgdb->set_height(txid, height);
+          m_msg_db->set_height(txid, height);
       }
       LOG_PRINT_L0("Message alrady exist, txid: " << txid);
       return false;
     }
 
-    std::string body = msg.substr(0, msg.size() - sizeof(crypto::signature));
-    binary_archive<false> ar{epee::strspan<std::uint8_t>(body)};
-    message_data message;
-    if(!::serialization::serialize(ar, message))
-      return false;
-
-    size_t idx;
-    THROW_WALLET_EXCEPTION_IF(!m_addrdb->get_id(message.m_sender, idx),
-       tools::error::wallet_internal_error, "Failed, no sender");
-    address_book_row row;
-    m_addrdb->get(idx, row);
-    cryptonote::account_public_address sender = row.m_address;
-
-    cryptonote::account_public_address chat;
-    if(m_addrdb->get_id(message.m_chat, idx) || m_addrdb->get_id(message.m_parent, idx))
+    if(type == MSG_TX_EXTRA_TYPE)
     {
-      m_addrdb->get(idx, row);
-      chat = row.m_address;
-    }
-    else
-      chat = sender;
-
-    if(check_data_with_back_signature(msg, sender.m_spend_public_key))
-    {
-      uint64_t n = 0;
-      if(type == MSG_TX_EXTRA_TYPE && freq == MSG_TX_EXTRA_FREQ_0)
+      std::string body = msg.substr(0, msg.size() - sizeof(crypto::signature));
+      binary_archive<false> ar{epee::strspan<std::uint8_t>(body)};
+      message_data message;
+      THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar, message),
+         tools::error::wallet_internal_error, "Failed serialize message");
+      
+      size_t sender_idx, chat_idx;
+      address_book_row chat_row;
+      cryptonote::account_public_address sender = { crypto::null_pkey, crypto::null_pkey };
+      bool is_anon = true; bool add_sender = false;
+      if(m_adr_db->get_id(message.m_sender, sender_idx))
       {
-        bool r;
-        if(message.m_parent == crypto::null_hash) {
-          if(db_message_chat_add(n, chat, sender, message.m_text, message.m_enable_comments, txid, height, timestamp, message.m_parent) && 0 != m_callback)
-            m_callback->on_msg_received(chat, n, txid);
-        } else {
-          if(db_message_chat_add(n, message.m_chat, message.m_sender, message.m_text, message.m_enable_comments, txid, height, timestamp, message.m_parent) && 0 != m_callback)
-            m_callback->on_msg_received(message.m_chat, n, txid);
+        address_book_row sender_row;
+        m_adr_db->get(sender_idx, sender_row);
+        sender = sender_row.m_address;
+        is_anon = sender_row.m_address.m_spend_public_key == crypto::null_pkey || sender_row.m_address.m_view_public_key == crypto::null_pkey;
+        cryptonote::address_parse_info info;
+        if(is_anon && get_account_address_from_str(info, m_nettype, message.m_address))
+        {
+          if(message.m_sender == address_to_hash(info.address))
+          {
+            sender = info.address;
+            sender_row.m_address = sender;
+            is_anon = false;
+            if(m_adr_db->set(sender_idx, sender_row))
+              m_adr_db->del_tag(sender_idx, Monero::TAG_ANON);
+          }
+        }
+      }
+      else
+      {
+        cryptonote::address_parse_info info;
+        if(get_account_address_from_str(info, m_nettype, message.m_address))
+        {
+          if(message.m_sender == address_to_hash(info.address))
+          {
+            sender = info.address;
+            is_anon = false;
+          }
+        }
+        add_sender = true;
+      }
+
+      if(!is_anon)
+      {
+        THROW_WALLET_EXCEPTION_IF(!check_data_with_back_signature(msg, sender.m_spend_public_key),
+          tools::error::wallet_internal_error, "Failed check signature");
+      }
+
+      if(add_sender)
+      {
+        string md, mn;
+        get_my_default_description(md);
+        get_my_default_short_name(mn);
+        address_book_row sender_row{
+          sender,
+          message.m_sender,
+          crypto::null_hash8,
+          message.m_description,
+          false,
+          false,
+          false,
+          false,
+          crypto::null_skey,
+          crypto::null_skey,
+          message.m_short_name,
+          {},
+          {},
+          0,
+          md,
+          mn
+        };
+        get_short_name_background_color_randomize_p(sender_row.m_short_name_background);
+        get_short_name_text_color_from_background(sender_row.m_short_name_background, sender_row.m_short_name_color);
+        THROW_WALLET_EXCEPTION_IF(!m_adr_db->add(sender_row, sender_idx),
+          tools::error::wallet_internal_error, "Error add sender address");
+        if(is_anon)
+          m_adr_db->add_tag(sender_idx, Monero::TAG_ANON);
+      }
+
+      bool is_multi_user = false;
+      cryptonote::account_public_address chat;
+      if(m_adr_db->get_id(message.m_chat, chat_idx) || m_adr_db->get_id(message.m_parent, chat_idx))
+      {
+        m_adr_db->get(chat_idx, chat_row);
+        chat = chat_row.m_address;
+        is_multi_user = chat_row.m_has_view_skey;
+      }
+      else
+        chat = sender;
+
+      uint64_t n = 0;
+      if(message.m_parent == crypto::null_hash && !is_anon)
+      {
+        if(db_message_chat_add(n,
+          chat,
+          sender,
+          message.m_data,
+          message.m_description,
+          message.m_short_name,
+          message.m_enable_comments,
+          txid,
+          height,
+          timestamp,
+          message.m_parent) && 0 != m_callback)
+        {
+          m_callback->on_msg_received(chat, n, txid);
+        }
+      }
+      else
+      {
+        if(db_message_chat_add(n,
+          message.m_chat,
+          message.m_sender,
+          message.m_data,
+          message.m_description,
+          message.m_short_name,
+          message.m_enable_comments,
+          txid,
+          height,
+          timestamp,
+          message.m_parent) && 0 != m_callback)
+        {
+          m_callback->on_msg_received(message.m_chat, n, txid);
         }
       }
       
@@ -4593,10 +5053,70 @@ bool wallet2::on_message_chat_received(uint64_t height, const crypto::hash& txid
           chat,
           n,
           sender,
-          message.m_text,
+          message.m_data,
+          message.m_description,
+          message.m_short_name,
           message.m_enable_comments,
           timestamp,
           message.m_parent);
+      }
+    }
+    else if(type == MSG_TX_EXTRA_CTRL)
+    {
+      std::string body = msg.substr(0, msg.size() - sizeof(crypto::signature));
+      binary_archive<false> ar{epee::strspan<std::uint8_t>(body)};
+      message_ctrl ctrl;
+      THROW_WALLET_EXCEPTION_IF(!::serialization::serialize(ar, ctrl),
+         tools::error::wallet_internal_error, "Failed serialize ctrl");
+
+      size_t chat_idx; address_book_row chat_row;
+      cryptonote::account_public_address chat;
+
+      THROW_WALLET_EXCEPTION_IF(!m_adr_db->get_id(ctrl.m_chat, chat_idx),
+        tools::error::wallet_internal_error, "Error get chat address");
+      THROW_WALLET_EXCEPTION_IF(!m_adr_db->get(chat_idx, chat_row),
+        tools::error::wallet_internal_error, "Error get chat row");
+      chat = chat_row.m_address;
+
+      size_t sender_idx; address_book_row sender_row;
+      cryptonote::account_public_address sender;
+      THROW_WALLET_EXCEPTION_IF(!m_adr_db->get_id(ctrl.m_sender, sender_idx),
+        tools::error::wallet_internal_error, "Error get sender address");
+      THROW_WALLET_EXCEPTION_IF(!m_adr_db->get(sender_idx, sender_row),
+        tools::error::wallet_internal_error, "Error get sender row");
+      sender = sender_row.m_address;
+      THROW_WALLET_EXCEPTION_IF(!check_data_with_back_signature(msg, sender.m_spend_public_key),
+        tools::error::wallet_internal_error, "Failed check message signature");
+      crypto::signature sign;
+      THROW_WALLET_EXCEPTION_IF(!epee::string_tools::hex_to_pod(ctrl.m_data["sign"], sign),
+        tools::error::wallet_internal_error, "Failed parse signature");
+      THROW_WALLET_EXCEPTION_IF(!crypto::check_signature(ctrl.m_sender, chat.m_spend_public_key, sign),
+        tools::error::wallet_internal_error, "Failed check owner chat signature");
+      size_t ctrl_idx; crypto::hash ctrl_hash; crypto::hash ctrl_txid;
+      if(ctrl.m_op == MESSAGE_CTRL_MSG_DELETE || ctrl.m_op == MESSAGE_CTRL_MSG_UNDELETE)
+      {
+        THROW_WALLET_EXCEPTION_IF(!epee::string_tools::hex_to_pod(ctrl.m_data["txid"], ctrl_txid),
+          tools::error::wallet_internal_error, "Failed parse ctrl row hash");
+      }
+      else
+      {
+        THROW_WALLET_EXCEPTION_IF(!epee::string_tools::hex_to_pod(ctrl.m_data["adr"], ctrl_hash),
+          tools::error::wallet_internal_error, "Failed parse ctrl row hash");
+        THROW_WALLET_EXCEPTION_IF(ctrl_hash == address_to_hash(m_account_public_address),
+          tools::error::wallet_internal_error, "My address is restricted");
+        THROW_WALLET_EXCEPTION_IF(!m_adr_db->get_id(ctrl_hash, ctrl_idx),
+          tools::error::wallet_internal_error, "Error get ctrl idx");
+      }
+
+      bool rc = false;
+      switch(ctrl.m_op)
+      {
+      case MESSAGE_CTRL_USER_BLOCK: rc = m_adr_db->add_tag(ctrl_idx, Monero::TAG_BLOCK); break;
+      case MESSAGE_CTRL_USER_UNBLOCK: rc = m_adr_db->del_tag(ctrl_idx, Monero::TAG_BLOCK); break;
+      case MESSAGE_CTRL_USER_DELETE: rc = m_adr_db->add_tag(ctrl_idx, Monero::TAG_DEL); break;
+      case MESSAGE_CTRL_USER_UNDELETE: rc = m_adr_db->del_tag(ctrl_idx, Monero::TAG_DEL); break;
+      case MESSAGE_CTRL_MSG_DELETE: rc = m_msg_db->add_tag(ctrl_txid, Monero::TAG_DEL); break;
+      case MESSAGE_CTRL_MSG_UNDELETE: rc = m_msg_db->del_tag(ctrl_txid, Monero::TAG_DEL); break;
       }
     }
   }
@@ -4610,7 +5130,7 @@ bool wallet2::on_message_chat_received(uint64_t height, const crypto::hash& txid
 
 bool wallet2::on_message_chat_removed(const crypto::hash& txid)
 {
-  return m_msgdb->del(txid);
+  return m_msg_db->del(txid);
 }
 
 bool wallet2::on_atomic_swap_x_received(const crypto::hash& txid, const std::string& x)
@@ -4646,43 +5166,43 @@ bool wallet2::lua_call(const std::string& name, const std::string& pars)
 
 bool wallet2::get_message_chat_parent(const cryptonote::account_public_address& chat, crypto::hash& parent)
 {
-  return m_msgdb->get_parent(m_msgdb->to_hash(chat), parent);
+  return m_msg_db->get_parent(chat, parent);
 }
 
 bool wallet2::get_message_chat_parent(const crypto::hash& chat, crypto::hash& parent)
 {
-  return m_msgdb->get_parent(m_msgdb->to_hash(chat), parent);
+  return m_msg_db->get_parent(chat, parent);
 }
 
 uint64_t wallet2::get_message_chat_size(const cryptonote::account_public_address& addr)
 {
-  return m_msgdb->size(addr);
+  return m_msg_db->size(addr);
 }
 
 uint64_t wallet2::get_message_chat_unread(const cryptonote::account_public_address& addr)
 {
-  return m_msgdb->unread(addr);
+  return m_msg_db->unread(addr);
 }
 
 uint64_t wallet2::get_message_chat_timestamp(const cryptonote::account_public_address& addr)
 {
-  return m_msgdb->last_timestamp(addr);
+  return m_msg_db->last_timestamp(addr);
 }
 
 
 uint64_t wallet2::get_message_chat_size(const crypto::hash& chat)
 {
-  return m_msgdb->size(m_msgdb->to_hash(chat));
+  return m_msg_db->size(chat);
 }
 
 uint64_t wallet2::get_message_chat_unread(const crypto::hash& chat)
 {
-  return m_msgdb->unread(m_msgdb->to_hash(chat));
+  return m_msg_db->unread(chat);
 }
 
 uint64_t wallet2::get_message_chat_timestamp(const crypto::hash& chat)
 {
-  return m_msgdb->last_timestamp(m_msgdb->to_hash(chat));
+  return m_msg_db->last_timestamp(chat);
 }
 
 bool wallet2::get_message_from_chat(const cryptonote::account_public_address& addr, uint64_t n, message_list_row& row)
@@ -4695,66 +5215,136 @@ bool wallet2::get_message_from_chat(const cryptonote::account_public_address& ad
 bool wallet2::get_message_from_chat(const crypto::hash& chat, uint64_t n, message_list_row& row)
 {
   crypto::hash txid;
-  if(!m_msgdb->get_txid(m_msgdb->to_hash(chat), n, txid))
+  if(!m_msg_db->get_txid(chat, n, txid))
     return false;
-  msgdb::message_data data;
-  if(!m_msgdb->get(txid, data))
-    return false;
-  bool sender_exist = false;
-  if(m_msgdb->to_hash(m_account_public_address) == data.sender)
-  {
-    row.m_sender = m_account_public_address;
-    sender_exist = true;
-  }
-  else
-  {
-    uint64_t r_id;
-    sender_exist = m_addrdb->get_row_id(data.sender, r_id);
-    address_book_row r;
-    m_addrdb->get(r_id, r);
-    row.m_sender = r.m_address;
-  }
-  if(sender_exist)
-  {
-    row.m_text = data.data;
-    row.m_enable_comments = data.enable_comments;
-    row.m_height = data.height;
-    row.m_timestamp = data.timestamp;
-    row.m_txid = txid;
-    return true;
-  }
-  return false;
+  return get_message_from_txid(txid, row);
 }
 
 bool wallet2::get_message_from_txid(const crypto::hash& txid, message_list_row& row)
 {
-  msgdb::message_data data;
-  if(!m_msgdb->get(txid, data))
+  msg_db::message_data data;
+  if(!m_msg_db->get(txid, data))
     return false;
-  bool sender_exist = false;
-  if(m_msgdb->to_hash(m_account_public_address) == data.sender)
-  {
-    row.m_sender = m_account_public_address;
-    sender_exist = true;
-  }
-  else
+  row.m_sender = {crypto::null_pkey, crypto::null_pkey};
+  row.m_sender_hash = data.sender;
+  if(address_to_hash(m_account_public_address) != data.sender)
   {
     uint64_t r_id;
-    sender_exist = m_addrdb->get_row_id(data.sender, r_id);
-    address_book_row r;
-    m_addrdb->get(r_id, r);
-    row.m_sender = r.m_address;
+    if(m_adr_db->get_id(data.sender, r_id))
+    {
+      address_book_row r;
+      m_adr_db->get(r_id, r);
+      row.m_sender = r.m_address;
+    }
   }
-  if(sender_exist)
-  {
-    row.m_text = data.data;
-    row.m_enable_comments = data.enable_comments;
-    row.m_height = data.height;
-    row.m_timestamp = data.timestamp;
-    row.m_txid = txid;
-    return true;
-  }
-  return false;
+  else
+    row.m_sender = m_account_public_address;
+  row.m_text = data.data;
+  row.m_description = data.description;
+  row.m_short_name = data.short_name;
+  row.m_enable_comments = data.enable_comments;
+  row.m_height = data.height;
+  row.m_timestamp = data.timestamp;
+  row.m_txid = txid;
+  return true;
+}
+
+void wallet2::set_message_chat_tags(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tags)
+{
+  m_msg_db->set_tags(chat, n, tags);
+}
+
+bool wallet2::get_message_chat_tags(const cryptonote::account_public_address& chat, uint64_t n, std::string& tags)
+{
+  return m_msg_db->get_tags(chat, n, tags);
+}
+
+void wallet2::set_message_chat_tags(const crypto::hash& chat, uint64_t n, const std::string& tags)
+{
+  m_msg_db->set_tags(chat, n, tags);
+}
+
+bool wallet2::get_message_chat_tags(const crypto::hash& chat, uint64_t n, std::string& tags)
+{
+  return m_msg_db->get_tags(chat, n, tags);
+}
+
+void wallet2::set_message_chat_tags(const crypto::hash& txid, const std::string& tags)
+{
+  m_msg_db->set_tags(txid, tags);
+}
+
+bool wallet2::get_message_chat_tags(const crypto::hash& txid, std::string& tags)
+{
+  return m_msg_db->get_tags(txid, tags);
+}
+
+bool wallet2::add_message_chat_tag(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tag)
+{
+  return m_msg_db->add_tag(chat, n, tag);
+}
+
+bool wallet2::del_message_chat_tag(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tag)
+{
+  return m_msg_db->del_tag(chat, n, tag);
+}
+
+bool wallet2::add_message_chat_tag(const crypto::hash& chat, uint64_t n, const std::string& tag)
+{
+  return m_msg_db->add_tag(chat, n, tag);
+}
+
+bool wallet2::del_message_chat_tag(const crypto::hash& chat, uint64_t n, const std::string& tag)
+{
+  return m_msg_db->del_tag(chat, n, tag);
+}
+
+bool wallet2::add_message_chat_tag(const crypto::hash& txid, const std::string& tag)
+{
+  return m_msg_db->add_tag(txid, tag);
+}
+
+bool wallet2::del_message_chat_tag(const crypto::hash& txid, const std::string& tag)
+{
+  return m_msg_db->del_tag(txid, tag);
+}
+
+bool wallet2::del_message_chat_row(const cryptonote::account_public_address& chat, uint64_t n)
+{
+  return del_message_chat_row(address_to_hash(chat), n);
+}
+
+bool wallet2::undel_message_chat_row(const cryptonote::account_public_address& chat, uint64_t n)
+{
+  return undel_message_chat_row(address_to_hash(chat), n);
+}
+
+bool wallet2::del_message_chat_row(const crypto::hash& chat, uint64_t n)
+{
+  crypto::hash txid;
+  if(!m_msg_db->get_txid(chat, n, txid))
+    return false;
+
+  if(!m_msg_db->add_tag(txid, Monero::TAG_DEL))
+    return false;
+
+  do_message_ctrl_send(chat, txid, MESSAGE_CTRL_MSG_DELETE);
+
+  return true;
+}
+
+bool wallet2::undel_message_chat_row(const crypto::hash& chat, uint64_t n)
+{
+  crypto::hash txid;
+  if(!m_msg_db->get_txid(chat, n, txid))
+    return false;
+
+  if(!m_msg_db->del_tag(txid, Monero::TAG_DEL))
+    return false;
+
+  do_message_ctrl_send(chat, txid, MESSAGE_CTRL_MSG_UNDELETE);
+
+  return true;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -5192,8 +5782,8 @@ bool wallet2::deinit()
 {
   if(m_is_initialized) {
     m_lua_simple.reset();
-    m_addrdb.reset();
-    m_msgdb.reset();
+    m_adr_db.reset();
+    m_msg_db.reset();
     m_is_initialized = false;
     unlock_keys_file();
     m_account.deinit();
@@ -6236,8 +6826,8 @@ void wallet2::generate(const std::string& wallet_, const epee::wipeable_string& 
   setup_new_blockchain();
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -6284,8 +6874,8 @@ crypto::secret_key wallet2::generate(const std::string& wallet_, const epee::wip
   setup_new_blockchain();
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -6371,8 +6961,8 @@ void wallet2::generate(const std::string& wallet_, const epee::wipeable_string& 
   setup_new_blockchain();
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -6414,8 +7004,8 @@ void wallet2::generate(const std::string& wallet_, const epee::wipeable_string& 
   setup_new_blockchain();
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -6462,8 +7052,8 @@ void wallet2::restore(const std::string& wallet_, const epee::wipeable_string& p
   setup_new_blockchain();
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -7209,8 +7799,8 @@ void wallet2::load(const std::string& wallet_, const epee::wipeable_string& pass
   }
 
   if(!wallet_.empty()) {
-    if(!m_msgdb) m_msgdb.reset(new msgdb(m_message_file, this));
-    if(!m_addrdb) m_addrdb.reset(new addrdb(m_address_book_file, this));
+    if(!m_msg_db) m_msg_db.reset(new msg_db(m_message_file, this));
+    if(!m_adr_db) m_adr_db.reset(new adr_db(m_address_book_file, this));
   }
 
   setup_lua_simple();
@@ -15739,7 +16329,7 @@ std::string wallet2::make_uri(const std::string &address, const std::string &pay
   return uri;
 }
 //----------------------------------------------------------------------------------------------------
-bool wallet2::parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
+bool wallet2::parse_uri(const std::string &uri, std::string &address, bool& has_view_skey, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error)
 {
   if (uri.substr(0, 7) != "xboost:")
   {
@@ -15757,6 +16347,9 @@ bool wallet2::parse_uri(const std::string &uri, std::string &address, std::strin
     error = std::string("URI has wrong address: ") + address;
     return false;
   }
+
+  has_view_skey = info.has_view_skey;
+
   if (!strchr(remainder.c_str(), '?'))
     return true;
 

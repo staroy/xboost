@@ -70,7 +70,7 @@
 #include "common/password.h"
 #include "node_rpc_proxy.h"
 #include "message_store.h"
-#include "msgdb.h"
+#include "msg-db.h"
 #include "wallet_lua.h"
 #include "wallet_light_rpc.h"
 #include "wallet_rpc_helpers.h"
@@ -93,10 +93,13 @@ class wallet_accessor_test;
 
 namespace tools
 {
+
+  crypto::hash address_to_hash(const cryptonote::account_public_address &chat);
+
   class ringdb;
   class wallet2;
   class Notify;
-  class addrdb;
+  class adr_db;
 
   class gamma_picker
   {
@@ -764,6 +767,7 @@ private:
     struct address_book_row
     {
       cryptonote::account_public_address m_address;
+      crypto::hash m_address_hash;
       crypto::hash8 m_payment_id;
       std::string m_description;
       bool m_is_subaddress;
@@ -772,14 +776,17 @@ private:
       bool m_has_view_skey;
       crypto::secret_key m_spend_skey;
       crypto::secret_key m_view_skey;
-      std::string m_ab;
-      uint8_t m_ab_color[3];
-      uint8_t m_ab_background[3];
+      std::string m_short_name;
+      uint8_t m_short_name_color[3];
+      uint8_t m_short_name_background[3];
       uint64_t m_timestamp;
+      std::string m_my_description;
+      std::string m_my_short_name;
 
       BEGIN_SERIALIZE_OBJECT()
         VERSION_FIELD(0)
         FIELD(m_address)
+        FIELD(m_address_hash)
         FIELD(m_payment_id)
         FIELD(m_description)
         FIELD(m_is_subaddress)
@@ -788,50 +795,93 @@ private:
         FIELD(m_has_view_skey)
         FIELD(m_spend_skey)
         FIELD(m_view_skey)
-        FIELD(m_ab)
-        ar.serialize_blob(m_ab_color, 3);
+        FIELD(m_short_name)
+        ar.serialize_blob(m_short_name_color, 3);
         if (!ar.good()) return false;
-        ar.serialize_blob(m_ab_background, 3);
+        ar.serialize_blob(m_short_name_background, 3);
         if (!ar.good()) return false;
+        FIELD(m_my_description)
+        FIELD(m_my_short_name)
       END_SERIALIZE()
     };
 
     // GUI Message list row
     struct message_list_row
     {
+      crypto::hash m_sender_hash;
       cryptonote::account_public_address m_sender;
       std::string m_text;
+      std::string m_description;
+      std::string m_short_name;
       bool m_enable_comments;
       uint64_t m_height;
       uint64_t m_timestamp;
       crypto::hash m_txid;
 
-      BEGIN_SERIALIZE_OBJECT()
+      /*BEGIN_SERIALIZE_OBJECT()
         VERSION_FIELD(0)
         FIELD(m_sender)
+        FIELD(m_sender_hash)
         FIELD(m_text)
+        FIELD(m_description)
+        FIELD(m_short_name)
         FIELD(m_enable_comments)
         FIELD(m_height)
         FIELD(m_timestamp)
         FIELD(m_txid)
-      END_SERIALIZE()
+      END_SERIALIZE()*/
     };
 
-    struct message_data
+    struct message_prefix
     {
-      std::string m_text;
       crypto::hash m_chat;
       crypto::hash m_sender;
-      crypto::hash m_parent;
-      bool m_enable_comments;
 
       BEGIN_SERIALIZE_OBJECT()
         VERSION_FIELD(0)
-        FIELD(m_text)
         FIELD(m_chat)
         FIELD(m_sender)
+      END_SERIALIZE()
+    };
+
+    struct message_data : message_prefix
+    {
+      std::string m_data;
+      crypto::hash m_parent;
+      bool m_enable_comments;
+      std::string m_description;
+      std::string m_short_name;
+      std::string m_address;
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELDS(*static_cast<message_prefix *>(this))
+        VERSION_FIELD(0)
+        FIELD(m_data)
         FIELD(m_parent)
         FIELD(m_enable_comments)
+        FIELD(m_description)
+        FIELD(m_short_name)
+        FIELD(m_address)
+      END_SERIALIZE()
+    };
+
+    #define MESSAGE_CTRL_USER_BLOCK       1
+    #define MESSAGE_CTRL_USER_UNBLOCK     2
+    #define MESSAGE_CTRL_USER_DELETE      3
+    #define MESSAGE_CTRL_USER_UNDELETE    4
+    #define MESSAGE_CTRL_MSG_DELETE       5
+    #define MESSAGE_CTRL_MSG_UNDELETE     6
+
+    struct message_ctrl : message_prefix
+    {
+      uint64_t m_op;
+      serializable_unordered_map<std::string, std::string> m_data;
+
+      BEGIN_SERIALIZE_OBJECT()
+        FIELDS(*static_cast<message_prefix *>(this))
+        VERSION_FIELD(0)
+        FIELD(m_op)
+        FIELD(m_data)
       END_SERIALIZE()
     };
 
@@ -1514,40 +1564,77 @@ private:
     * \brief GUI Address book get/store
     */
     //const std::vector<address_book_row>& get_address_book() const { return m_address_book; }
-    bool new_multi_user_book_row(const std::string& description, address_book_row& row, size_t& row_id);
+    bool new_multi_user_book_row(const std::string& description, const std::string& ab, const std::vector<uint8_t>& bg, address_book_row& row, size_t& row_id);
     bool add_address_book_row(const address_book_row& row, size_t& row_id);
     bool set_address_book_row(size_t row_id, const address_book_row& row);
     bool get_address_book_row(size_t row_id, address_book_row& row);
+    bool delete_address_book_row(size_t row_id);
+    bool undelete_address_book_row(size_t row_id);
+    bool block_address_book_row(size_t row_id);
+    bool unblock_address_book_row(size_t row_id);
     bool get_address_book_row_id(const cryptonote::account_public_address &address, size_t &row_id);
     bool get_address_book_row_id(const crypto::hash &addr, size_t &row_id);
     bool is_address_book_row_multi_user(size_t row_id);
-    bool delete_address_book_row(std::size_t row_id);
+    void set_address_book_tags(size_t row_id, const std::string& tags);
+    bool get_address_book_tags(size_t row_id, std::string& tags) const;
+    bool is_address_book_taged(size_t row_id, const std::string& tag);
+    bool add_address_book_tag(size_t row_id, const std::string& tag);
+    bool del_address_book_tag(size_t row_id, const std::string& tag);
+    void add_address_book_attr(size_t row_id, const std::string& name, const std::string& val);
+    bool get_address_book_attr(size_t row_id, const std::string& name, std::string& val) const;
+    bool del_address_book_attr(size_t row_id, const std::string& name);
     size_t get_address_book_count();
+    bool get_my_default_description(std::string& desc) const;
+    bool get_my_default_short_name(std::string& desc) const;
+    void set_my_default_description(const std::string& desc);
+    void set_my_default_short_name(const std::string& desc);
+    void get_short_name_background_color_randomize(std::vector<uint8_t>& bc);
 
-    bool add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
+    bool add_message_to_chat(const cryptonote::account_public_address& chat, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
     bool get_message_from_chat(const cryptonote::account_public_address& chat, uint64_t n, message_list_row& row);
     bool get_message_chat_parent(const cryptonote::account_public_address& chat, crypto::hash& parent);
-    bool db_message_chat_add(uint64_t& n, const cryptonote::account_public_address& chat, const cryptonote::account_public_address& sender, const std::string& text, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
+    bool db_message_chat_add(uint64_t& n, const cryptonote::account_public_address& chat, const cryptonote::account_public_address& sender, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
     uint64_t get_message_chat_size(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_unread(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_height(const cryptonote::account_public_address& chat);
     uint64_t get_message_chat_timestamp(const cryptonote::account_public_address& chat);
 
-
-    bool add_message_to_chat(const crypto::hash& chat, const std::string& text, bool enable_comments, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
+    bool add_message_to_chat(const crypto::hash& chat, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t& n, const crypto::hash& parent = crypto::null_hash);
     bool get_message_from_chat(const crypto::hash& chat, uint64_t n, message_list_row& row);
     bool get_message_from_txid(const crypto::hash& txid, message_list_row& row);
     bool get_message_chat_parent(const crypto::hash& chat, crypto::hash& parent);
-    bool db_message_chat_add(uint64_t& n, const crypto::hash& chat, const crypto::hash& sender, const std::string& text, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
+    bool db_message_chat_add(uint64_t& n, const crypto::hash& chat, const crypto::hash& sender, const std::string& text, const std::string& description, const std::string& short_name, bool enable_comments, const crypto::hash& txid, uint64_t height = 0, uint64_t timestamp = time(NULL), const crypto::hash& parent = crypto::null_hash);
     uint64_t get_message_chat_size(const crypto::hash& chat);
     uint64_t get_message_chat_unread(const crypto::hash& chat);
     uint64_t get_message_chat_height(const crypto::hash& chat);
     uint64_t get_message_chat_timestamp(const crypto::hash& chat);
 
+    void set_message_chat_tags(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tags);
+    bool get_message_chat_tags(const cryptonote::account_public_address& chat, uint64_t n, std::string& tags);
+    void set_message_chat_tags(const crypto::hash& chat, uint64_t n, const std::string& tags);
+    bool get_message_chat_tags(const crypto::hash& chat, uint64_t n, std::string& tags);
+    void set_message_chat_tags(const crypto::hash& txid, const std::string& tags);
+    bool get_message_chat_tags(const crypto::hash& txid, std::string& tags);
+
+    bool add_message_chat_tag(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tag);
+    bool del_message_chat_tag(const cryptonote::account_public_address& chat, uint64_t n, const std::string& tag);
+    bool add_message_chat_tag(const crypto::hash& chat, uint64_t n, const std::string& tag);
+    bool del_message_chat_tag(const crypto::hash& chat, uint64_t n, const std::string& tag);
+    bool add_message_chat_tag(const crypto::hash& txid, const std::string& tag);
+    bool del_message_chat_tag(const crypto::hash& txid, const std::string& tag);
+
+    bool del_message_chat_row(const cryptonote::account_public_address& chat, uint64_t n);
+    bool undel_message_chat_row(const cryptonote::account_public_address& chat, uint64_t n);
+    bool del_message_chat_row(const crypto::hash& chat, uint64_t n);
+    bool undel_message_chat_row(const crypto::hash& chat, uint64_t n);
+
     bool on_message_chat_received(uint64_t height, const crypto::hash& txid, const crypto::secret_key &view_key, uint64_t type, uint64_t freq, const std::string& data, uint64_t timestamp);
     bool on_message_chat_removed(const crypto::hash& txid);
-    bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
-    bool do_message_chat_send(const crypto::hash& chat, const std::string& data, bool enable_comments, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
+    bool do_message_chat_send(const cryptonote::account_public_address& addr, const std::string& data, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
+    bool do_message_chat_send(const crypto::hash& chat, const std::string& data, const std::string& description, const std::string& short_name, bool enable_comments, bool is_anon, uint64_t amount, bool unprunable, uint64_t type, uint64_t freq, const crypto::hash& parent = crypto::null_hash);
+    bool do_message_ctrl_send(const cryptonote::account_public_address& chat, const message_ctrl& ctl);
+    bool do_message_ctrl_send_for_all_multi_users(size_t row_id, uint64_t op);
+    bool do_message_ctrl_send(const crypto::hash chat, const crypto::hash txid, uint64_t op);
 
     bool on_atomic_swap_x_received(const crypto::hash& txid, const std::string& x);
 
@@ -1666,7 +1753,7 @@ private:
     static bool decrypt(const std::string &ciphertext, const crypto::public_key &encryption_public_key, const crypto::chacha_iv &iv, const crypto::secret_key &view_secret_key, std::string &plaintext);
 
     std::string make_uri(const std::string &address, const std::string &payment_id, uint64_t amount, const std::string &tx_description, const std::string &recipient_name, std::string &error) const;
-    bool parse_uri(const std::string &uri, std::string &address, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error);
+    bool parse_uri(const std::string &uri, std::string &address, bool& has_view_skey, std::string &payment_id, uint64_t &amount, std::string &tx_description, std::string &recipient_name, std::vector<std::string> &unknown_parameters, std::string &error);
 
     uint64_t get_blockchain_height_by_date(uint16_t year, uint8_t month, uint8_t day);    // 1<=month<=12, 1<=day<=31
 
@@ -1974,8 +2061,8 @@ private:
     serializable_unordered_map<crypto::hash, std::string> m_tx_notes;
     serializable_unordered_map<std::string, std::string> m_attributes;
     //std::vector<tools::wallet2::address_book_row> m_address_book;
-    std::unique_ptr<addrdb> m_addrdb;
-    std::unique_ptr<msgdb> m_msgdb;
+    std::unique_ptr<adr_db> m_adr_db;
+    std::unique_ptr<msg_db> m_msg_db;
     std::unique_ptr<lua::simple> m_lua_simple;
     std::mutex m_lua_simple_mx;
     std::pair<serializable_map<std::string, std::string>, std::vector<std::string>> m_account_tags;
@@ -2487,24 +2574,6 @@ namespace boost
       a & x.m_has_view_skey;
       if (x.m_has_view_skey)
         a & x.m_view_skey;
-    }
-
-    template <class Archive>
-    inline void serialize(Archive& a, tools::wallet2::message_list_row& x, const boost::serialization::version_type ver)
-    {
-      a & x.m_sender;
-      a & x.m_text;
-      a & x.m_height;
-      a & x.m_timestamp;
-      a & x.m_txid;
-    }
-
-    template <class Archive>
-    inline void serialize(Archive& a, tools::wallet2::message_data& x, const boost::serialization::version_type ver)
-    {
-      a & x.m_text;
-      a & x.m_chat;
-      a & x.m_sender;
     }
 
     template <class Archive>

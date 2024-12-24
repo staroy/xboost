@@ -1828,6 +1828,7 @@ namespace wallet_rpc
   struct uri_spec
   {
     std::string address;
+    bool has_view_skey;
     std::string payment_id;
     uint64_t amount;
     std::string tx_description;
@@ -1835,6 +1836,7 @@ namespace wallet_rpc
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(address);
+      KV_SERIALIZE(has_view_skey);
       KV_SERIALIZE(payment_id);
       KV_SERIALIZE(amount);
       KV_SERIALIZE(tx_description);

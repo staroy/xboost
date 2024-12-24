@@ -1589,7 +1589,9 @@ namespace cryptonote
       block_to_blob(b, arg.b.block);
       //pack transactions
       for(auto& tx:  txs)
+      {
         arg.b.txs.push_back({tx, crypto::null_hash});
+      }
 
       m_pprotocol->relay_block(arg, exclude_context);
     }
